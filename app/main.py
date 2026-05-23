@@ -6,7 +6,8 @@ from app.routers import crisis
 app = FastAPI(
     title="Municipality Reports API",
     description="Smart Municipality Issue Reporting System — Ηράκλειο",
-    version="1.0.0"
+    version="1.0.0",
+    redirect_slashes=False  # ← πρόσθεσε αυτό
 )
 
 app.add_middleware(
