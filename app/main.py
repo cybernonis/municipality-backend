@@ -7,6 +7,8 @@ from app.services.sla_service import check_sla_violations
 from app.routers import sla
 from app.routers import predictive
 from app.routers import iot
+from app.routers import digital_twin
+
 
 
 app = FastAPI(
@@ -35,6 +37,7 @@ app.include_router(crisis.router, prefix="/crisis", tags=["Crisis"])
 app.include_router(sla.router, prefix="/sla", tags=["SLA"])
 app.include_router(predictive.router, prefix="/predictive", tags=["Predictive"])
 app.include_router(iot.router, prefix="/iot", tags=["IoT"])
+app.include_router(digital_twin.router, prefix="/digital-twin", tags=["Digital Twin"])
 
 @app.get("/")
 def root():

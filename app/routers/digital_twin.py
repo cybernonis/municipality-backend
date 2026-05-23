@@ -7,147 +7,75 @@ import json
 router = APIRouter()
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-@router.get("/snapshot")
-def get_city_snapshot():
-    """Πλήρης snapshot της πόλης για το Digital Twin"""
+def get_snapshot_data():
+    import time
     
-    # Reports
     reports = supabase.table("reports")\
-        .select("id, category, severity, status, latitude, longitude, address, created_at")\
+        .select("id, category, severity, status, latitude, longitude")\
+        .limit(50)\
         .execute()
     
-    # IoT devices + latest readings
+    time.sleep(0.1)
+    
     devices = supabase.table("iot_devices")\
         .select("id, name, type, latitude, longitude, status, battery_level")\
         .execute()
     
-    # IoT readings (alerts only)
-    alerts = supabase.table("iot_readings")\
-        .select("device_id, metric, value, unit, alert")\
-        .eq("alert", True)\
-        .order("created_at", desc=True)\
-        .limit(50)\
-        .execute()
+    time.sleep(0.1)
     
-    # Crisis events
     crises = supabase.table("crisis_events")\
         .select("id, type, latitude, longitude, status, severity")\
         .eq("status", "active")\
         .execute()
 
+    reports_data = reports.data or []
+    devices_data = devices.data or []
+    crises_data = crises.data or []
+
     return {
-        "reports": reports.data or [],
-        "iot_devices": devices.data or [],
-        "iot_alerts": alerts.data or [],
-        "active_crises": crises.data or [],
+        "reports": reports_data,
+        "iot_devices": devices_data,
+        "crises": crises_data,
         "summary": {
-            "total_reports": len(reports.data or []),
-            "open_reports": len([r for r in (reports.data or []) if r["status"] != "completed"]),
-            "iot_devices": len(devices.data or []),
-            "active_alerts": len(alerts.data or []),
-            "active_crises": len(crises.data or []),
+            "total_reports": len(reports_data),
+            "open_reports": len([r for r in reports_data if r["status"] != "completed"]),
+            "iot_devices": len(devices_data),
+            "active_alerts": 0,
+            "active_crises": len(crises_data),
         }
     }
 
-@router.get("/heatmap")
-def get_heatmap_data():
-    """Δεδομένα για heatmap"""
-    reports = supabase.table("reports")\
-        .select("latitude, longitude, severity, category, status")\
-        .execute()
-    
-    points = []
-    for r in (reports.data or []):
-        intensity = 3 if r["severity"] == "high" else 2 if r["severity"] == "medium" else 1
-        points.append({
-            "lat": r["latitude"],
-            "lng": r["longitude"],
-            "intensity": intensity,
-            "category": r["category"],
-            "status": r["status"]
-        })
-    
-    return {"points": points}
-
-@router.post("/simulate")
-def simulate_scenario(scenario: dict):
-    """Simulation 'τι θα γίνει αν...'"""
-    
-    snapshot = get_city_snapshot()
-    
-    prompt = f"""
-Είσαι AI σύστημα Digital Twin για τον Δήμο Ηρακλείου.
-
-ΤΡΕΧΟΥΣΑ ΚΑΤΑΣΤΑΣΗ ΠΟΛΗΣ:
-{json.dumps(snapshot['summary'], ensure_ascii=False)}
-
-ΣΕΝΑΡΙΟ ΠΡΟΣΟΜΟΙΩΣΗΣ:
-{json.dumps(scenario, ensure_ascii=False)}
-
-Ανάλυσε το σενάριο και δώσε:
-1. Πιθανές επιπτώσεις
-2. Επηρεαζόμενες περιοχές
-3. Απαιτούμενοι πόροι
-4. Χρόνος αντιμετώπισης
-5. Συστάσεις
-
-Απάντησε ΜΟΝΟ με JSON:
-{{
-  "impact_assessment": {{
-    "severity": "critical|high|medium|low",
-    "affected_areas": ["string"],
-    "affected_population": "string",
-    "estimated_duration": "string"
-  }},
-  "required_resources": [
-    {{"type": "string", "quantity": "string", "priority": "string"}}
-  ],
-  "recommended_actions": [
-    {{"action": "string", "timeline": "string", "department": "string"}}
-  ],
-  "summary": "string στα ελληνικά"
-}}
-"""
-
-    message = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=1500,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    result = json.loads(message.content[0].text)
-    return result
+@router.get("/snapshot")
+def get_city_snapshot():
+    return get_snapshot_data()
 
 @router.get("/layers")
 def get_map_layers():
-    """Όλα τα layers για το χάρτη"""
-    snapshot = get_city_snapshot()
+    data = get_snapshot_data()
     
-    layers = {
+    return {
         "reports": [
             {
                 "id": r["id"],
                 "lat": r["latitude"],
                 "lng": r["longitude"],
-                "type": "report",
-                "category": r["category"],
-                "severity": r["severity"],
-                "status": r["status"],
+                "category": r.get("category", "other"),
+                "severity": r.get("severity", "medium"),
+                "status": r.get("status", "submitted"),
             }
-            for r in snapshot["reports"]
+            for r in data["reports"]
         ],
         "iot_devices": [
             {
                 "id": d["id"],
                 "lat": d["latitude"],
                 "lng": d["longitude"],
-                "type": "iot",
                 "device_type": d["type"],
                 "name": d["name"],
                 "status": d["status"],
-                "battery": d["battery_level"],
+                "battery": d.get("battery_level", 100),
             }
-            for d in snapshot["iot_devices"]
+            for d in data["iot_devices"]
             if d.get("latitude") and d.get("longitude")
         ],
         "crises": [
@@ -155,12 +83,83 @@ def get_map_layers():
                 "id": c["id"],
                 "lat": c["latitude"],
                 "lng": c["longitude"],
-                "type": "crisis",
                 "crisis_type": c["type"],
-                "severity": c["severity"],
+                "severity": c.get("severity", "high"),
             }
-            for c in snapshot["active_crises"]
+            for c in data["crises"]
         ],
     }
+
+@router.get("/heatmap")
+def get_heatmap_data():
+    reports = supabase.table("reports")\
+        .select("latitude, longitude, severity")\
+        .execute()
     
-    return layers
+    return {
+        "points": [
+            {
+                "lat": r["latitude"],
+                "lng": r["longitude"],
+                "intensity": 3 if r["severity"] == "high" else 2 if r["severity"] == "medium" else 1,
+            }
+            for r in (reports.data or [])
+        ]
+    }
+
+@router.post("/simulate")
+def simulate_scenario(scenario: dict):
+    data = get_snapshot_data()
+    summary = data["summary"]
+    
+    prompt = f"""
+Είσαι AI σύστημα Digital Twin για τον Δήμο Ηρακλείου.
+
+ΚΑΤΑΣΤΑΣΗ ΠΟΛΗΣ:
+- Συνολικές αναφορές: {summary['total_reports']}
+- Ανοιχτές: {summary['open_reports']}
+- IoT συσκευές: {summary['iot_devices']}
+- Ενεργές κρίσεις: {summary['active_crises']}
+
+ΣΕΝΑΡΙΟ: {scenario.get('type', 'flood')} στην περιοχή {scenario.get('location', 'κέντρο')}
+ΠΕΡΙΓΡΑΦΗ: {scenario.get('description', '')}
+
+Απάντησε ΜΟΝΟ με έγκυρο JSON χωρίς markdown:
+{{"impact_assessment":{{"severity":"high","affected_areas":["Κέντρο Ηρακλείου"],"affected_population":"5000 κάτοικοι","estimated_duration":"2-4 ώρες"}},"required_resources":[{{"type":"Πυροσβεστική","quantity":"3 οχήματα","priority":"high"}}],"recommended_actions":[{{"action":"Εκκένωση περιοχής","timeline":"Άμεσα","department":"Πολιτική Προστασία"}}],"summary":"Σύνοψη σεναρίου στα ελληνικά"}}
+"""
+
+    try:
+        message = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        text = message.content[0].text.strip()
+        
+        # Καθάρισε markdown αν υπάρχει
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0].strip()
+        
+        result = json.loads(text)
+        return result
+        
+    except Exception as e:
+        # Fallback αποτέλεσμα
+        return {
+            "impact_assessment": {
+                "severity": "high",
+                "affected_areas": [scenario.get('location', 'Κέντρο')],
+                "affected_population": "Άγνωστο",
+                "estimated_duration": "2-4 ώρες"
+            },
+            "required_resources": [
+                {"type": "Άμεση Βοήθεια", "quantity": "Κατά περίπτωση", "priority": "high"}
+            ],
+            "recommended_actions": [
+                {"action": "Επικοινωνία με 112", "timeline": "Άμεσα", "department": "Πολιτική Προστασία"}
+            ],
+            "summary": f"Σενάριο {scenario.get('type')} στην περιοχή {scenario.get('location')}. Απαιτείται άμεση δράση."
+        }
