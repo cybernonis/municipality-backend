@@ -6,6 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.services.sla_service import check_sla_violations
 from app.routers import sla
 from app.routers import predictive
+from app.routers import iot
 
 
 app = FastAPI(
@@ -33,6 +34,8 @@ app.include_router(payments.router,      prefix="/payments",      tags=["Payment
 app.include_router(crisis.router, prefix="/crisis", tags=["Crisis"])
 app.include_router(sla.router, prefix="/sla", tags=["SLA"])
 app.include_router(predictive.router, prefix="/predictive", tags=["Predictive"])
+app.include_router(iot.router, prefix="/iot", tags=["IoT"])
+
 @app.get("/")
 def root():
     return {
