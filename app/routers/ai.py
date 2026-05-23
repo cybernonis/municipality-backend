@@ -1,36 +1,31 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from typing import Optional
-from app.services.ai_service import classify_image
-import traceback
+from fastapi import APIRouter, UploadFile, File
+from typing import Optional, List
+from app.services.ai_service import classify_image, chat_with_claude
+from pydantic import BaseModel
 
 router = APIRouter()
 
-@router.get("/test")
-async def test_ai():
-    try:
-        from app.config import ANTHROPIC_API_KEY
-        import anthropic
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        msg = client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=100,
-            messages=[{"role": "user", "content": "Πες μου 'Γεια σου Ηράκλειο!'"}]
-        )
-        return {"status": "ok", "response": msg.content[0].text}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    user_id: Optional[str] = None
 
 @router.post("/classify")
 async def classify(
     image: UploadFile = File(...),
     description: Optional[str] = None
 ):
-    try:
-        image_bytes = await image.read()
-        print(f"Image received: {len(image_bytes)} bytes")
-        result = await classify_image(image_bytes, description)
-        return result
-    except Exception as e:
-        print("ERROR:", str(e))
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+    image_bytes = await image.read()
+    result = await classify_image(image_bytes, description)
+    return result
+
+@router.post("/chat")
+async def chat(request: ChatRequest):
+    result = await chat_with_claude(
+        messages=request.messages,
+        user_id=request.user_id
+    )
+    return {"response": result}

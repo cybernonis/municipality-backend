@@ -82,3 +82,59 @@ async def classify_image(image_bytes: bytes, description: str = None) -> dict:
 
     result["department"] = CATEGORIES.get(result["category"], "technical_services")
     return result
+async def chat_with_claude(messages: list, user_id: str = None) -> str:
+    # Πάρε στατιστικά από τη βάση
+    from app.database import supabase
+    
+    reports_result = supabase.table("reports")\
+        .select("category, severity, status, address")\
+        .limit(20)\
+        .execute()
+    
+    reports = reports_result.data or []
+    
+    total = len(reports)
+    submitted = len([r for r in reports if r['status'] == 'submitted'])
+    completed = len([r for r in reports if r['status'] == 'completed'])
+    high = len([r for r in reports if r['severity'] == 'high'])
+
+    system_prompt = f"""
+Είσαι ο ψηφιακός βοηθός του Δήμου Ηρακλείου. 
+Βοηθάς τους πολίτες με ερωτήσεις για τις δημοτικές υπηρεσίες.
+
+ΤΡΕΧΟΝΤΑ ΣΤΑΤΙΣΤΙΚΑ ΑΝΑΦΟΡΩΝ:
+- Συνολικές αναφορές: {total}
+- Εκκρεμείς: {submitted}
+- Ολοκληρωμένες: {completed}
+- Υψηλής προτεραιότητας: {high}
+
+ΤΜΗΜΑΤΑ ΔΗΜΟΥ:
+- Τεχνικές Υπηρεσίες: βλάβες δρόμων, υποδομές
+- Ηλεκτροφωτισμός: φωτισμός δρόμων
+- Καθαριότητα: σκουπίδια, καθαρισμός
+- Υδραυλικές Υπηρεσίες: διαρροές νερού
+- Πράσινο & Περιβάλλον: δέντρα, πάρκα
+
+ΟΔΗΓΙΕΣ:
+- Απάντα ΠΑΝΤΑ στα Ελληνικά
+- Να είσαι φιλικός και επαγγελματικός
+- Αν δεν ξέρεις κάτι, πες το ειλικρινά
+- Για επείγοντα (φωτιά, ατύχημα) παρέπεμπε σε 112
+- Για υδραυλικά επείγοντα: 2810-229900
+- Ώρες λειτουργίας δήμου: Δευτέρα-Παρασκευή 8:00-14:00
+"""
+
+    # Μετατροπή μηνυμάτων
+    claude_messages = [
+        {"role": m["role"], "content": m["content"]}
+        for m in messages
+    ]
+
+    response = client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=1000,
+        system=system_prompt,
+        messages=claude_messages,
+    )
+
+    return response.content[0].text
