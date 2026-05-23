@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import departments, auth, reports, ai, participation, performance
+from app.routers import departments, auth, reports, ai, participation, performance, payments
 
 app = FastAPI(
     title="Municipality Reports API",
@@ -22,6 +22,7 @@ app.include_router(ai.router,            prefix="/ai",            tags=["AI"])
 app.include_router(departments.router,   prefix="/departments",   tags=["Departments"])
 app.include_router(participation.router, prefix="/participation", tags=["Participation"])
 app.include_router(performance.router,   prefix="/performance",   tags=["Performance"])
+app.include_router(payments.router,      prefix="/payments",      tags=["Payments"])
 
 @app.get("/")
 def root():
@@ -40,3 +41,4 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+    
