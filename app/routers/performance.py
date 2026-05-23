@@ -92,9 +92,9 @@ def rate_report(rating_data: RatingCreate):
 
     # Βρες το report
     report = supabase.table("reports")\
-        .select("*, sla_rules(target_hours)")\
-        .eq("id", rating_data.report_id)\
-        .execute()
+    .select("*")\
+    .eq("id", rating_data.report_id)\
+    .execute()
 
     if not report.data:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -125,7 +125,7 @@ def rate_report(rating_data: RatingCreate):
     perf_data = {
         "id": str(uuid.uuid4()),
         "report_id": rating_data.report_id,
-        "worker_id": r.get("assigned_to") or "unassigned",
+        "worker_id": r.get("assigned_to") or None,
         "completed_at": now.isoformat(),
         "citizen_rating": rating_data.rating,
         "speed_score": speed,

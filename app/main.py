@@ -1,8 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import departments, auth, reports, ai
-from app.routers import participation
-from app.routers import performance
+from app.routers import departments, auth, reports, ai, participation, performance
 
 app = FastAPI(
     title="Municipality Reports API",
@@ -18,12 +16,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router,        prefix="/auth",        tags=["Auth"])
-app.include_router(reports.router,     prefix="/reports",     tags=["Reports"])
-app.include_router(ai.router,          prefix="/ai",          tags=["AI"])
-app.include_router(departments.router, prefix="/departments", tags=["Departments"])
+app.include_router(auth.router,          prefix="/auth",          tags=["Auth"])
+app.include_router(reports.router,       prefix="/reports",       tags=["Reports"])
+app.include_router(ai.router,            prefix="/ai",            tags=["AI"])
+app.include_router(departments.router,   prefix="/departments",   tags=["Departments"])
 app.include_router(participation.router, prefix="/participation", tags=["Participation"])
-app.include_router(performance.router, prefix="/performance", tags=["Performance"])
+app.include_router(performance.router,   prefix="/performance",   tags=["Performance"])
 
 @app.get("/")
 def root():
@@ -36,6 +34,7 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
 if __name__ == "__main__":
     import uvicorn
     import os
