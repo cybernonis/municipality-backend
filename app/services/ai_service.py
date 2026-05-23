@@ -126,9 +126,9 @@ async def chat_with_claude(messages: list, user_id: str = None) -> str:
 
     # Μετατροπή μηνυμάτων
     claude_messages = [
-        {"role": m["role"], "content": m["content"]}
-        for m in messages
-    ]
+    {"role": m.role, "content": m.content}
+    for m in messages
+]
 
     response = client.messages.create(
         model="claude-opus-4-5",
