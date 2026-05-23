@@ -1,27 +1,41 @@
-from app.database import supabase
 from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Hardcoded SLA targets — αποφεύγουμε extra DB queries
+SLA_TARGETS = {
+    ('road_damage',  'high'):   4,
+    ('road_damage',  'medium'): 48,
+    ('road_damage',  'low'):    168,
+    ('lighting',     'high'):   2,
+    ('lighting',     'medium'): 24,
+    ('lighting',     'low'):    72,
+    ('water_leak',   'high'):   1,
+    ('water_leak',   'medium'): 12,
+    ('water_leak',   'low'):    48,
+    ('waste',        'high'):   8,
+    ('waste',        'medium'): 24,
+    ('waste',        'low'):    72,
+    ('vandalism',    'high'):   24,
+    ('vandalism',    'medium'): 120,
+    ('vandalism',    'low'):    336,
+    ('fallen_tree',  'high'):   48,
+    ('fallen_tree',  'medium'): 168,
+    ('fallen_tree',  'low'):    720,
+}
+
 SLA_STATUS = {
-    'ok':        {'label': 'Εντός SLA',    'color': 'green',  'icon': '🟢'},
-    'warning':   {'label': 'Προειδοποίηση','color': 'yellow', 'icon': '🟡'},
-    'breach':    {'label': 'Παράβαση SLA', 'color': 'red',    'icon': '🔴'},
-    'escalated': {'label': 'Κλιμάκωση',   'color': 'purple', 'icon': '🚨'},
+    'ok':        {'label': 'Εντός SLA',     'color': 'green',  'icon': '🟢'},
+    'warning':   {'label': 'Προειδοποίηση', 'color': 'yellow', 'icon': '🟡'},
+    'breach':    {'label': 'Παράβαση SLA',  'color': 'red',    'icon': '🔴'},
+    'escalated': {'label': 'Κλιμάκωση',    'color': 'purple', 'icon': '🚨'},
 }
 
 def get_sla_target(category: str, severity: str) -> int:
-    """Επιστρέφει target hours από sla_rules"""
-    result = supabase.table("sla_rules")\
-        .select("target_hours")\
-        .eq("category", category)\
-        .eq("severity", severity)\
-        .execute()
-    return result.data[0]["target_hours"] if result.data else 48
+    return SLA_TARGETS.get((category, severity), 48)
 
 def calculate_sla_status(created_at: str, category: str, severity: str) -> dict:
-    """Υπολογίζει SLA status για ένα report"""
     created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
     now = datetime.now(timezone.utc)
     elapsed_hours = (now - created).total_seconds() / 3600
@@ -49,12 +63,11 @@ def calculate_sla_status(created_at: str, category: str, severity: str) -> dict:
     }
 
 def check_sla_violations():
-    """Ελέγχει όλα τα open tickets για SLA violations"""
+    from app.database import supabase
     logger.info("🔍 Checking SLA violations...")
 
-    # Πάρε όλα τα open reports
     result = supabase.table("reports")\
-        .select("id, category, severity, status, created_at, department_id, assigned_to")\
+        .select("id, category, severity, status, created_at")\
         .in_("status", ["submitted", "assigned", "in_progress"])\
         .execute()
 
@@ -62,32 +75,22 @@ def check_sla_violations():
         return []
 
     violations = []
-    warnings = []
-
     for report in result.data:
         sla = calculate_sla_status(
             report["created_at"],
             report.get("category", "other"),
             report.get("severity", "medium")
         )
-
-        if sla["status"] == "breach":
+        if sla["status"] in ["breach", "escalated", "warning"]:
             violations.append({**report, "sla": sla})
-            logger.warning(f"🔴 SLA BREACH: Report {report['id'][:8]} - {sla['percentage']}%")
+            logger.warning(f"{sla['icon']} Report {report['id'][:8]}: {sla['percentage']}%")
 
-        elif sla["status"] == "escalated":
-            violations.append({**report, "sla": sla})
-            logger.error(f"🚨 ESCALATED: Report {report['id'][:8]} - {sla['percentage']}%")
-
-        elif sla["status"] == "warning":
-            warnings.append({**report, "sla": sla})
-            logger.warning(f"🟡 WARNING: Report {report['id'][:8]} - {sla['percentage']}%")
-
-    logger.info(f"✅ SLA Check complete: {len(violations)} violations, {len(warnings)} warnings")
-    return violations + warnings
+    logger.info(f"✅ Done: {len(violations)} issues")
+    return violations
 
 def get_all_reports_with_sla():
-    """Επιστρέφει όλα τα open reports με SLA status"""
+    from app.database import supabase
+
     result = supabase.table("reports")\
         .select("*, departments(name)")\
         .in_("status", ["submitted", "assigned", "in_progress"])\
@@ -106,7 +109,6 @@ def get_all_reports_with_sla():
         )
         reports_with_sla.append({**report, "sla": sla})
 
-    # Ταξινόμηση: escalated → breach → warning → ok
     priority = {"escalated": 0, "breach": 1, "warning": 2, "ok": 3}
     reports_with_sla.sort(key=lambda x: priority.get(x["sla"]["status"], 4))
 
