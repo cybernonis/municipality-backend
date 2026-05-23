@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File
 from typing import Optional, List
-from app.services.ai_service import classify_image, chat_with_claude
+from app.services.ai_service import classify_image, chat_with_claude, chat_with_citizen, chat_with_admin
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -28,4 +28,14 @@ async def chat(request: ChatRequest):
         messages=request.messages,
         user_id=request.user_id
     )
+    return {"response": result}
+
+@router.post("/chat/citizen")
+async def chat_citizen(request: ChatRequest):
+    result = await chat_with_citizen(messages=request.messages)
+    return {"response": result}
+
+@router.post("/chat/admin")
+async def chat_admin(request: ChatRequest):
+    result = await chat_with_admin(messages=request.messages)
     return {"response": result}
