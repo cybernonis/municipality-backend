@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import departments, auth, reports, ai
 from app.routers import participation
+from app.routers import performance
 
 app = FastAPI(
     title="Municipality Reports API",
@@ -22,6 +23,7 @@ app.include_router(reports.router,     prefix="/reports",     tags=["Reports"])
 app.include_router(ai.router,          prefix="/ai",          tags=["AI"])
 app.include_router(departments.router, prefix="/departments", tags=["Departments"])
 app.include_router(participation.router, prefix="/participation", tags=["Participation"])
+app.include_router(performance.router, prefix="/performance", tags=["Performance"])
 
 @app.get("/")
 def root():
