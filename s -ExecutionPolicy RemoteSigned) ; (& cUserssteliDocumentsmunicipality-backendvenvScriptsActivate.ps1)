@@ -1,0 +1,27 @@
+[33m21ba191[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Add Digital Twin + location search
+[33m1d3794e[m Add Digital Twin API
+[33mfe08971[m Add IoT simulation
+[33md80d1ba[m Add IoT Integration
+[33m287c13f[m Add Predictive Maintenance AI
+[33m339c887[m Add Predictive Maintenance AI
+[33m63d749c[m Add SLA tracking service
+[33m4762b82[m Add SLA tracking + scheduler
+[33m353638d[m Add Crisis Management + fix routes
+[33meadea2a[m Add Crisis Management
+[33m7d31328[m Add citizen and admin chatbot endpoints
+[33m5e20b6a[m Add Stripe payments
+[33m991f58a[m Fix performance scoring
+[33mfc2ec5c[m Add performance scoring
+[33md6dde2d[m Add participation endpoints
+[33m10703a3[m Fix ChatMessage subscript error
+[33m08d0321[m Add AI Chatbot endpoint
+[33m99800b1[m Remove railway.toml
+[33m3317924[m Fix port python
+[33mf419a0a[m Fix port with bash script
+[33mc26e27e[m Fix railway config
+[33mae7c2c9[m Add Procfile
+[33m0e8b6f3[m Fix requirements with versions
+[33me9c0c79[m Add Dockerfile
+[33mf894a4e[m Fix start command
+[33m072b115[m Add nixpacks config
+[33m0bc71dd[m Initial commit - FastAPI backend

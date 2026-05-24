@@ -4,6 +4,9 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -47,7 +50,9 @@ def get_emergency_contacts():
     return result.data
 
 @router.post("/report")
-def report_crisis(crisis: CrisisCreate):
+async def report_crisis(crisis: CrisisCreate):
+    from app.services.email_service import send_crisis_email
+
     crisis_type = CRISIS_TYPES.get(crisis.type, CRISIS_TYPES['other'])
 
     data = {
@@ -64,9 +69,15 @@ def report_crisis(crisis: CrisisCreate):
 
     result = supabase.table("crisis_events").insert(data).execute()
 
-    # TODO: Send emergency notifications
-    # send_sms_to_responders(crisis)
-    # notify_admin_dashboard(crisis)
+    # Email alert στον admin
+    try:
+        await send_crisis_email(
+            crisis_type=crisis_type["label"],
+            location=crisis.address or f"{crisis.latitude:.4f}, {crisis.longitude:.4f}",
+            description=crisis.description or "Χωρίς περιγραφή"
+        )
+    except Exception as e:
+        logger.error(f"Crisis email error: {e}")
 
     return {
         "message": "Η αναφορά έκτακτης ανάγκης καταχωρήθηκε!",

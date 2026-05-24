@@ -64,6 +64,9 @@ def calculate_sla_status(created_at: str, category: str, severity: str) -> dict:
 
 def check_sla_violations():
     from app.database import supabase
+    import asyncio
+    from app.services.email_service import send_sla_breach_email
+
     logger.info("🔍 Checking SLA violations...")
 
     result = supabase.table("reports")\
@@ -84,6 +87,19 @@ def check_sla_violations():
         if sla["status"] in ["breach", "escalated", "warning"]:
             violations.append({**report, "sla": sla})
             logger.warning(f"{sla['icon']} Report {report['id'][:8]}: {sla['percentage']}%")
+
+            # Email μόνο για breach/escalated (όχι warning)
+            if sla["status"] in ["breach", "escalated"]:
+                try:
+                    loop = asyncio.new_event_loop()
+                    loop.run_until_complete(send_sla_breach_email(
+                        report_id=report["id"][:8],
+                        category=report.get("category", "other"),
+                        hours_overdue=sla["elapsed_hours"] - sla["target_hours"]
+                    ))
+                    loop.close()
+                except Exception as e:
+                    logger.error(f"SLA email error: {e}")
 
     logger.info(f"✅ Done: {len(violations)} issues")
     return violations

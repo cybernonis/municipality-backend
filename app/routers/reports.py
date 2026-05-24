@@ -4,6 +4,10 @@ from app.database import supabase
 from app.services.ai_service import classify_image
 from app.services.storage_service import upload_image
 import uuid
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -73,6 +77,37 @@ async def create_report(
         }
 
         result = supabase.table("reports").insert(report_data).execute()
+
+        # Broadcast WebSocket
+        try:
+            from app.main import manager
+            asyncio.create_task(manager.broadcast({
+                "type": "new_report",
+                "data": {
+                    "id": report_data["id"],
+                    "category": report_data["category"],
+                    "severity": report_data["severity"],
+                    "latitude": report_data["latitude"],
+                    "longitude": report_data["longitude"],
+                    "status": report_data["status"],
+                }
+            }))
+        except Exception as e:
+            logger.error(f"WebSocket broadcast error: {e}")
+
+        # Email για high/critical severity
+        if report_data["severity"] in ["high", "critical"]:
+            try:
+                from app.services.email_service import send_high_severity_email
+                asyncio.create_task(send_high_severity_email(
+                    report_id=report_data["id"][:8],
+                    category=report_data["category"],
+                    description=description or "Χωρίς περιγραφή",
+                    address=address or f"{latitude:.4f}, {longitude:.4f}"
+                ))
+            except Exception as e:
+                logger.error(f"High severity email error: {e}")
+
         return {"message": "Αναφορά υποβλήθηκε!", "report": result.data[0]}
 
     except Exception as e:
@@ -94,5 +129,16 @@ def update_report(report_id: str, update: dict):
             }).execute()
 
         return {"message": "Ενημερώθηκε!", "report": result.data[0]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{report_id}")
+def delete_report(report_id: str):
+    try:
+        supabase.table("reports")\
+            .delete()\
+            .eq("id", report_id)\
+            .execute()
+        return {"message": "Διαγράφηκε!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
