@@ -12,4 +12,4 @@ apscheduler==3.10.4
 stripe==11.1.0
 websockets==12.0
 aiosmtplib==3.0.0
-echo "# force cache bust" >> requirements.txt
+# force cache bust
