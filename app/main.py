@@ -11,6 +11,7 @@ from app.routers import departments, auth, reports, ai, participation, performan
 from app.routers import crisis, sla, predictive, iot, digital_twin
 from app.routers import external
 from app.services.sla_service import check_sla_violations
+from app.routers import staff
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,7 @@ app.include_router(predictive.router,    prefix="/predictive",    tags=["Predict
 app.include_router(iot.router,           prefix="/iot",           tags=["IoT"])
 app.include_router(digital_twin.router,  prefix="/digital-twin",  tags=["Digital Twin"])
 app.include_router(external.router,      prefix="/external",      tags=["External Data"])
-app.include_router(external.router, prefix="/external", tags=["External"])
-
+app.include_router(staff.router, prefix="/staff", tags=["Staff"])
 
 @app.get("/")
 def root():
@@ -105,8 +105,9 @@ scheduler.start()
 # Async background monitoring for external data
 # ─────────────────────────────────────────────
 async def _monitor_loop(fetch_fn, interval_seconds: int, label: str):
-    """Generic monitoring loop: fetch → check thresholds → broadcast alerts."""
+    """Generic monitoring loop: fetch → check thresholds → broadcast alerts → email."""
     from app.services.external_service import check_thresholds
+    from app.services.email_service import send_external_alert_email
 
     # Stagger start so all loops don't fire simultaneously
     await asyncio.sleep(5)
@@ -121,6 +122,16 @@ async def _monitor_loop(fetch_fn, interval_seconds: int, label: str):
                     "source": label,
                     "alerts": alerts,
                 })
+                # Email για κάθε alert
+                for alert in alerts:
+                    try:
+                        await send_external_alert_email(
+                            alert_type=alert.get("type", "unknown"),
+                            message=alert.get("message", "")
+                        )
+                    except Exception as e:
+                        logger.error(f"External alert email error: {e}")
+
         except Exception as e:
             logger.error(f"[{label}] monitoring error: {e}")
         await asyncio.sleep(interval_seconds)
