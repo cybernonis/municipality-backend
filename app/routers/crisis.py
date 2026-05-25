@@ -5,8 +5,7 @@ from typing import Optional
 from datetime import datetime, timezone
 import uuid
 import logging
-
-
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +53,6 @@ def get_emergency_contacts():
 @router.post("/report")
 async def report_crisis(crisis: CrisisCreate):
     from app.services.email_service import send_crisis_email
-   
-
-    
 
     crisis_type = CRISIS_TYPES.get(crisis.type, CRISIS_TYPES['other'])
 
@@ -74,9 +70,22 @@ async def report_crisis(crisis: CrisisCreate):
 
     result = supabase.table("crisis_events").insert(data).execute()
 
+    # WebSocket broadcast
+    try:
+        from app.main import manager
+        import asyncio
+        asyncio.create_task(manager.broadcast({
+            "type": "external_alert",
+            "source": "crisis",
+            "alerts": [{
+                "type": crisis.type,
+                "message": f"{crisis_type['icon']} {crisis_type['label']} — {crisis.address or 'Ηράκλειο'}"
+            }]
+        }))
+    except Exception as e:
+        logger.error(f"Crisis broadcast error: {e}")
+
     # Email alert στον admin
-    
-    
     try:
         await send_crisis_email(
             crisis_type=crisis_type["label"],
