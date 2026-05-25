@@ -52,6 +52,9 @@ def get_emergency_contacts():
 @router.post("/report")
 async def report_crisis(crisis: CrisisCreate):
     from app.services.email_service import send_crisis_email
+   
+
+    
 
     crisis_type = CRISIS_TYPES.get(crisis.type, CRISIS_TYPES['other'])
 
@@ -70,6 +73,8 @@ async def report_crisis(crisis: CrisisCreate):
     result = supabase.table("crisis_events").insert(data).execute()
 
     # Email alert στον admin
+    import os
+    logger.info(f"DEBUG: BREVO_API_KEY={bool(os.getenv('BREVO_API_KEY'))} ADMIN={os.getenv('ADMIN_EMAIL')}")
     try:
         await send_crisis_email(
             crisis_type=crisis_type["label"],
