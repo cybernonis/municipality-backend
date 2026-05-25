@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import uuid
 import logging
 
+print("CRISIS ROUTER LOADED v2", flush=True)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
