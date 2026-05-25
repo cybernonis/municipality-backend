@@ -8,7 +8,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_PORT = 465
 SMTP_USER = os.getenv("SMTP_USER", "")       # your@gmail.com
 SMTP_PASS = os.getenv("SMTP_PASS", "")       # App Password (16 chars)
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")   # που θα λαμβάνει alerts
@@ -32,7 +32,7 @@ async def send_email(to: str, subject: str, html: str):
             port=SMTP_PORT,
             username=SMTP_USER,
             password=SMTP_PASS,
-            start_tls=True,
+            use_tls=True,
         )
         logger.info(f"Email sent to {to}: {subject}")
         return True
