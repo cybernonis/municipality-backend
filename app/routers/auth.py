@@ -1,8 +1,13 @@
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import UserRegister, UserLogin
 from app.database import supabase
+from pydantic import BaseModel
 
 router = APIRouter()
+
+class FCMTokenUpdate(BaseModel):
+    user_id: str
+    fcm_token: str
 
 @router.post("/register")
 def register(user: UserRegister):
@@ -39,3 +44,14 @@ def login(user: UserLogin):
         }
     except Exception as e:
         raise HTTPException(status_code=401, detail="Λάθος email ή password")
+
+@router.post("/fcm-token")
+def update_fcm_token(data: FCMTokenUpdate):
+    try:
+        supabase.table("users")\
+            .update({"fcm_token": data.fcm_token})\
+            .eq("id", data.user_id)\
+            .execute()
+        return {"message": "FCM token ενημερώθηκε!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
