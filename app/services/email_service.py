@@ -14,7 +14,7 @@ BREVO_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 async def send_email(to: str, subject: str, html: str):
-    """Core send function via Brevo HTTP API."""
+    print(f"SEND_EMAIL called: to={to} subject={subject[:30]}", flush=True)
     if not BREVO_API_KEY:
         logger.warning("BREVO_API_KEY not set — skipping email")
         return False
