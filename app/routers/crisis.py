@@ -76,7 +76,7 @@ async def report_crisis(crisis: CrisisCreate):
 
     # Email alert στον admin
     import os
-    logger.info(f"DEBUG: BREVO_API_KEY={bool(os.getenv('BREVO_API_KEY'))} ADMIN={os.getenv('ADMIN_EMAIL')}")
+    print(f"DEBUG: BREVO_API_KEY={bool(os.getenv('BREVO_API_KEY'))} ADMIN={os.getenv('ADMIN_EMAIL')}", flush=True)
     try:
         await send_crisis_email(
             crisis_type=crisis_type["label"],
