@@ -1,41 +1,50 @@
-import aiosmtplib
+import httpx
 import logging
 import os
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 465
-SMTP_USER = os.getenv("SMTP_USER", "")       # your@gmail.com
-SMTP_PASS = os.getenv("SMTP_PASS", "")       # App Password (16 chars)
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")   # που θα λαμβάνει alerts
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+SENDER_EMAIL = os.getenv("SMTP_USER", "noreply@municipality.gr")
+SENDER_NAME = "Δήμος Ηρακλείου"
+
+BREVO_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 async def send_email(to: str, subject: str, html: str):
-    """Core send function."""
-    if not SMTP_USER or not SMTP_PASS:
-        logger.warning("SMTP not configured — skipping email")
+    """Core send function via Brevo HTTP API."""
+    if not BREVO_API_KEY:
+        logger.warning("BREVO_API_KEY not set — skipping email")
         return False
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"Δήμος Ηρακλείου <{SMTP_USER}>"
-        msg["To"] = to
-        msg.attach(MIMEText(html, "html", "utf-8"))
+    if not to:
+        logger.warning("No recipient email — skipping email")
+        return False
 
-        await aiosmtplib.send(
-            msg,
-            hostname=SMTP_HOST,
-            port=SMTP_PORT,
-            username=SMTP_USER,
-            password=SMTP_PASS,
-            use_tls=True,
-        )
-        logger.info(f"Email sent to {to}: {subject}")
-        return True
+    try:
+        payload = {
+            "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+            "to": [{"email": to}],
+            "subject": subject,
+            "htmlContent": html,
+        }
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "api-key": BREVO_API_KEY,
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(BREVO_URL, json=payload, headers=headers)
+
+        if resp.status_code in (200, 201):
+            logger.info(f"Email sent to {to}: {subject}")
+            return True
+        else:
+            logger.error(f"Brevo error {resp.status_code}: {resp.text}")
+            return False
+
     except Exception as e:
         logger.error(f"Email error: {e}")
         return False
