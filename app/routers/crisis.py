@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import uuid
 import logging
 
-print("CRISIS ROUTER LOADED v2", flush=True)
+
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +75,8 @@ async def report_crisis(crisis: CrisisCreate):
     result = supabase.table("crisis_events").insert(data).execute()
 
     # Email alert στον admin
-    import os
-    print(f"DEBUG: BREVO_API_KEY={bool(os.getenv('BREVO_API_KEY'))} ADMIN={os.getenv('ADMIN_EMAIL')}", flush=True)
+    
+    
     try:
         await send_crisis_email(
             crisis_type=crisis_type["label"],
