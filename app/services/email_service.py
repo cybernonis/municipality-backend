@@ -35,17 +35,22 @@ async def send_email(to: str, subject: str, html: str):
             "api-key": BREVO_API_KEY,
         }
 
+        print(f"CALLING BREVO API...", flush=True)  # ← ΠΡΟΣΘΕΣΕ
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(BREVO_URL, json=payload, headers=headers)
 
-        print(f"BREVO RESPONSE: {resp.status_code} {resp.text[:200]}", flush=True)  # ← ΠΡΟΣΘΕΣΕ
+        print(f"BREVO RESPONSE: {resp.status_code} {resp.text[:200]}", flush=True)
 
         if resp.status_code in (200, 201):
-            logger.info(f"Email sent to {to}: {subject}")
+            print(f"Email sent to {to}", flush=True)
             return True
         else:
-            logger.error(f"Brevo error {resp.status_code}: {resp.text}")
+            print(f"Brevo error {resp.status_code}: {resp.text}", flush=True)
             return False
+
+    except Exception as e:
+        print(f"EMAIL EXCEPTION: {type(e).__name__}: {e}", flush=True)
+        return False
 
     except Exception as e:
         logger.error(f"Email error: {e}")
