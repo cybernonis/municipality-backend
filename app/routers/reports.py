@@ -114,7 +114,7 @@ async def create_report(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.patch("/{report_id}")
-def update_report(report_id: str, update: dict):
+async def update_report(report_id: str, update: dict):
     try:
         result = supabase.table("reports")\
             .update({"status": update.get("status")})\
@@ -127,6 +127,24 @@ def update_report(report_id: str, update: dict):
                 "status": update.get("status"),
                 "comment": update.get("comment"),
             }).execute()
+
+        # Push notification στον πολίτη
+        try:
+            report = result.data[0] if result.data else None
+            if report and report.get("user_id") and update.get("status"):
+                user = supabase.table("users")\
+                    .select("fcm_token")\
+                    .eq("id", report["user_id"])\
+                    .execute()
+                if user.data and user.data[0].get("fcm_token"):
+                    from app.services.notification_service import notify_report_status_change
+                    await notify_report_status_change(
+                        fcm_token=user.data[0]["fcm_token"],
+                        report_id=report_id,
+                        status=update.get("status")
+                    )
+        except Exception as e:
+            logger.error(f"Push notification error: {e}")
 
         return {"message": "Ενημερώθηκε!", "report": result.data[0]}
     except Exception as e:
