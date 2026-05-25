@@ -12,4 +12,5 @@ apscheduler==3.10.4
 stripe==11.1.0
 websockets==12.0
 aiosmtplib==3.0.0
+firebase-admin
 # force cache bust
