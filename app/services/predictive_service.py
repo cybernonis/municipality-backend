@@ -4,15 +4,14 @@ from app.database import supabase
 from app.config import ANTHROPIC_API_KEY
 from datetime import datetime, timezone, timedelta
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 def get_historical_data() -> dict:
     reports = supabase.table("reports")\
         .select("category, severity, status, address, created_at")\
         .execute()
-    
+
     data = reports.data or []
-    
+
     by_category = {}
     for r in data:
         cat = r.get("category", "other")
@@ -31,7 +30,7 @@ def get_historical_data() -> dict:
     for r in data:
         addr = r.get("address", "Άγνωστο")
         areas[addr] = areas.get(addr, 0) + 1
-    
+
     top_areas = sorted(areas.items(), key=lambda x: x[1], reverse=True)[:5]
 
     return {
@@ -45,11 +44,11 @@ def get_historical_data() -> dict:
         ),
     }
 
+
 def predict_maintenance() -> dict:
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)  # ← ΕΔΩ
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     hist = get_historical_data()
-    ...
-    
+
     prompt = (
         "Είσαι AI σύστημα Predictive Maintenance για τον Δήμο Ηρακλείου.\n\n"
         f"ΙΣΤΟΡΙΚΑ ΔΕΔΟΜΕΝΑ:\n"
@@ -102,8 +101,14 @@ def predict_maintenance() -> dict:
         messages=[{"role": "user", "content": prompt}]
     )
 
-    result = json.loads(message.content[0].text)
-    
+    text = message.content[0].text.strip()
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0].strip()
+
+    result = json.loads(text)
+
     supabase.table("ai_predictions").insert({
         "id": __import__("uuid").uuid4().__str__(),
         "type": "predictive_maintenance",
@@ -111,7 +116,7 @@ def predict_maintenance() -> dict:
         "confidence": 0.85,
         "recommendation": result.get("summary", ""),
     }).execute()
-    
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "historical_data": hist,
