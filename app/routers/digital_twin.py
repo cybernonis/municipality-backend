@@ -3,29 +3,29 @@ from app.database import supabase
 from app.config import ANTHROPIC_API_KEY
 import anthropic
 import json
+import time
 
 router = APIRouter()
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 def get_snapshot_data():
-    import time
-    
     reports = supabase.table("reports")\
         .select("id, category, severity, status, latitude, longitude")\
         .limit(50)\
         .execute()
-    
+
     time.sleep(0.1)
-    
+
     devices = supabase.table("iot_devices")\
         .select("id, name, type, latitude, longitude, status, battery_level")\
         .execute()
-    
+
     time.sleep(0.1)
-    
+
     crises = supabase.table("crisis_events")\
         .select("id, type, latitude, longitude, status, severity")\
         .eq("status", "active")\
+        .limit(10)\
         .execute()
 
     reports_data = reports.data or []
@@ -52,19 +52,19 @@ def get_city_snapshot():
 @router.get("/layers")
 def get_map_layers():
     data = get_snapshot_data()
-    
     return {
         "reports": [
-            {
-                "id": r["id"],
-                "lat": r["latitude"],
-                "lng": r["longitude"],
-                "category": r.get("category", "other"),
-                "severity": r.get("severity", "medium"),
-                "status": r.get("status", "submitted"),
-            }
-            for r in data["reports"]
-        ],
+    {
+        "id": r["id"],
+        "lat": r["latitude"],
+        "lng": r["longitude"],
+        "category": r.get("category", "other"),
+        "severity": r.get("severity", "medium"),
+        "status": r.get("status", "submitted"),
+        "created_at": r.get("created_at", ""),  # ← ΠΡΟΣΘΕΣΕ
+    }
+    for r in data["reports"]
+],
         "iot_devices": [
             {
                 "id": d["id"],
@@ -79,15 +79,16 @@ def get_map_layers():
             if d.get("latitude") and d.get("longitude")
         ],
         "crises": [
-            {
-                "id": c["id"],
-                "lat": c["latitude"],
-                "lng": c["longitude"],
-                "crisis_type": c["type"],
-                "severity": c.get("severity", "high"),
-            }
-            for c in data["crises"]
-        ],
+    {
+        "id": c["id"],
+        "lat": c["latitude"],
+        "lng": c["longitude"],
+        "crisis_type": c["type"],
+        "severity": c.get("severity", "high"),
+        "created_at": c.get("created_at", ""),  # ← ΠΡΟΣΘΕΣΕ
+    }
+    for c in data["crises"]
+],
     }
 
 @router.get("/heatmap")
@@ -95,7 +96,7 @@ def get_heatmap_data():
     reports = supabase.table("reports")\
         .select("latitude, longitude, severity")\
         .execute()
-    
+
     return {
         "points": [
             {
@@ -111,7 +112,7 @@ def get_heatmap_data():
 def simulate_scenario(scenario: dict):
     data = get_snapshot_data()
     summary = data["summary"]
-    
+
     prompt = f"""
 Είσαι AI σύστημα Digital Twin για τον Δήμο Ηρακλείου.
 
@@ -134,20 +135,16 @@ def simulate_scenario(scenario: dict):
             max_tokens=1000,
             messages=[{"role": "user", "content": prompt}]
         )
-        
+
         text = message.content[0].text.strip()
-        
-        # Καθάρισε markdown αν υπάρχει
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()
         elif "```" in text:
             text = text.split("```")[1].split("```")[0].strip()
-        
-        result = json.loads(text)
-        return result
-        
+
+        return json.loads(text)
+
     except Exception as e:
-        # Fallback αποτέλεσμα
         return {
             "impact_assessment": {
                 "severity": "high",
