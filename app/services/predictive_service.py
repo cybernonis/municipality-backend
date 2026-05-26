@@ -46,7 +46,9 @@ def get_historical_data() -> dict:
     }
 
 def predict_maintenance() -> dict:
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)  # ← ΕΔΩ
     hist = get_historical_data()
+    ...
     
     prompt = (
         "Είσαι AI σύστημα Predictive Maintenance για τον Δήμο Ηρακλείου.\n\n"
