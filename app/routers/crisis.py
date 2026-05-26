@@ -53,6 +53,7 @@ def get_emergency_contacts():
 @router.post("/report")
 async def report_crisis(crisis: CrisisCreate):
     from app.services.email_service import send_crisis_email
+    from app.services.notification_service import notify_crisis_alert
 
     crisis_type = CRISIS_TYPES.get(crisis.type, CRISIS_TYPES['other'])
 
@@ -94,6 +95,22 @@ async def report_crisis(crisis: CrisisCreate):
         )
     except Exception as e:
         logger.error(f"Crisis email error: {e}")
+
+    # Push notification σε όλους τους χρήστες
+    try:
+        users = supabase.table("users")\
+            .select("fcm_token")\
+            .not_.is_("fcm_token", "null")\
+            .execute()
+        tokens = [u["fcm_token"] for u in (users.data or []) if u.get("fcm_token")]
+        if tokens:
+            await notify_crisis_alert(
+                tokens=tokens,
+                crisis_type=crisis.type,
+                location=crisis.address or "Ηράκλειο"
+            )
+    except Exception as e:
+        logger.error(f"Crisis push error: {e}")
 
     return {
         "message": "Η αναφορά έκτακτης ανάγκης καταχωρήθηκε!",
