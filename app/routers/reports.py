@@ -50,7 +50,7 @@ async def create_report(
     image: Optional[UploadFile] = File(None),
 ):
     try:
-        image_url = None
+        image_url = ""
         ai_result = {"category": "other", "severity": "medium", "confidence": 0.0, "department": "technical_services"}
 
         if image is not None:
