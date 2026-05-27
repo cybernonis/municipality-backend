@@ -1,9 +1,13 @@
-from fastapi import APIRouter, HTTPException
-from app.database import supabase
-from pydantic import BaseModel
-from typing import Optional
+import logging
 import uuid
+from typing import Optional
 
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from app.database import supabase
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # --- MODELS ---
@@ -11,7 +15,8 @@ class PollCreate(BaseModel):
     title: str
     description: Optional[str] = None
     options: list
-    end_date: Optional[str] = None
+    ends_at: Optional[str] = None
+    created_by: Optional[str] = None
 
 class VoteCreate(BaseModel):
     poll_id: str
@@ -26,23 +31,37 @@ class ProposalCreate(BaseModel):
 # --- POLLS ---
 @router.get("/polls")
 def get_polls():
-    result = supabase.table("polls")\
-        .select("*")\
-        .order("created_at", desc=True)\
-        .execute()
-    return result.data
+    try:
+        result = supabase.table("polls").select("*").order("created_at", desc=True).execute()
+        return result.data
+    except Exception as e:
+        logger.error(f"get_polls error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/polls")
 def create_poll(poll: PollCreate):
-    data = {
-        "id": str(uuid.uuid4()),
-        "title": poll.title,
-        "description": poll.description,
-        "options": poll.options,
-        "end_date": poll.end_date,
-    }
-    result = supabase.table("polls").insert(data).execute()
-    return result.data[0]
+    try:
+        data = {
+            "id":          str(uuid.uuid4()),
+            "title":       poll.title,
+            "description": poll.description,
+            "options":     poll.options,
+            "ends_at":     poll.ends_at,
+            "created_by":  poll.created_by,
+            "status":      "active",
+        }
+        result = supabase.table("polls").insert(data).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Αποτυχία εισαγωγής — ο πίνακας polls πιθανώς δεν υπάρχει")
+        return result.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"create_poll error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Σφάλμα δημιουργίας poll: {e}. Βεβαιωθείτε ότι υπάρχει ο πίνακας polls στη Supabase.",
+        )
 
 @router.get("/polls/{poll_id}/results")
 def get_poll_results(poll_id: str):
