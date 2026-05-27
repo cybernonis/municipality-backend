@@ -171,5 +171,6 @@ def get_leaderboard():
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("[leaderboard] Unexpected error")
+        import traceback
+        logger.error(f"get_leaderboard ERROR: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
