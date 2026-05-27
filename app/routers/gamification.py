@@ -27,14 +27,26 @@ def _level_for(points: int) -> int:
     return max(1, points // 100 + 1)
 
 
-def _compute_badges(user_id: str, current: list) -> list:
-    badges = set(current)
-    result = supabase.table("reports").select("id", count="exact").eq("user_id", user_id).execute()
-    total = result.count or 0
-    for threshold, badge in BADGE_THRESHOLDS:
-        if total >= threshold:
-            badges.add(badge)
-    return sorted(badges)
+def _compute_badges(user_id: str, current_badges: list) -> list:
+    result = supabase.table("reports").select("id", count="exact").eq("citizen_id", user_id).execute()
+    total_reports = result.count or 0
+
+    new_badges = []
+    if total_reports >= 1  and "Πρώτη Αναφορά" not in current_badges:
+        new_badges.append("Πρώτη Αναφορά")
+    if total_reports >= 10 and "10 Αναφορές"   not in current_badges:
+        new_badges.append("10 Αναφορές")
+    if total_reports >= 50 and "Super Citizen"  not in current_badges:
+        new_badges.append("Super Citizen")
+
+    print(f"[badges] user_id={user_id} total_reports={total_reports} "
+          f"current={current_badges} new={new_badges}")
+
+    if new_badges:
+        all_badges = current_badges + new_badges
+        supabase.table("user_points").update({"badges": all_badges}).eq("user_id", user_id).execute()
+
+    return new_badges
 
 
 class AwardRequest(BaseModel):
@@ -74,15 +86,17 @@ def award_points(payload: AwardRequest):
             xp = 0
 
         new_points = current_points + xp
-        new_badges = _compute_badges(payload.user_id, current_badges)
         new_level  = _level_for(new_points)
 
         supabase.table("user_points").update({
             "points":     new_points,
-            "badges":     new_badges,
             "level":      new_level,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("user_id", payload.user_id).execute()
+
+        # badges αποθηκεύονται εντός _compute_badges αν υπάρχουν νέα
+        new_badges = _compute_badges(payload.user_id, current_badges)
+        all_badges = current_badges + new_badges
 
         return {
             "user_id":      payload.user_id,
@@ -91,8 +105,8 @@ def award_points(payload: AwardRequest):
             "total_points": new_points,
             "level":        new_level,
             "leveled_up":   new_level > current_level,
-            "new_badges":   [b for b in new_badges if b not in current_badges],
-            "all_badges":   new_badges,
+            "new_badges":   new_badges,
+            "all_badges":   all_badges,
         }
     except HTTPException:
         raise
