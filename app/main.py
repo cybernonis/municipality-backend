@@ -10,6 +10,8 @@ from app.routers import external
 from app.routers import departments, auth, reports, ai, participation, performance, payments
 from app.routers import crisis, sla, predictive, iot, digital_twin
 from app.routers import external
+from app.routers import announcements, appointments, smart_tips
+from app.routers import gamification, carbon
 from app.services.sla_service import check_sla_violations
 from app.routers import staff
 
@@ -41,8 +43,13 @@ app.include_router(sla.router,           prefix="/sla",           tags=["SLA"])
 app.include_router(predictive.router,    prefix="/predictive",    tags=["Predictive"])
 app.include_router(iot.router,           prefix="/iot",           tags=["IoT"])
 app.include_router(digital_twin.router,  prefix="/digital-twin",  tags=["Digital Twin"])
-app.include_router(external.router,      prefix="/external",      tags=["External Data"])
-app.include_router(staff.router, prefix="/staff", tags=["Staff"])
+app.include_router(external.router,       prefix="/external",       tags=["External Data"])
+app.include_router(staff.router,          prefix="/staff",          tags=["Staff"])
+app.include_router(announcements.router,  prefix="/announcements",  tags=["Announcements"])
+app.include_router(appointments.router,   prefix="/appointments",   tags=["Appointments"])
+app.include_router(smart_tips.router,     prefix="/smart-tips",     tags=["Smart Tips"])
+app.include_router(gamification.router,   prefix="/gamification",   tags=["Gamification"])
+app.include_router(carbon.router,         prefix="/carbon",         tags=["Carbon"])
 
 @app.get("/")
 def root():

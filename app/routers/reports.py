@@ -1,7 +1,9 @@
+import anthropic
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import Optional
+from app.config import ANTHROPIC_API_KEY
 from app.database import supabase
-from app.services.ai_service import classify_image
+from app.services.ai_service import classify_image, CATEGORIES
 from app.services.storage_service import upload_image
 import uuid
 import asyncio
@@ -149,6 +151,88 @@ async def update_report(report_id: str, update: dict):
         return {"message": "Ενημερώθηκε!", "report": result.data[0]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.patch("/{report_id}/auto-assign")
+async def auto_assign_report(report_id: str):
+    def _get_client():
+        return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    try:
+        report_result = supabase.table("reports").select("*").eq("id", report_id).execute()
+        if not report_result.data:
+            raise HTTPException(status_code=404, detail="Αναφορά δεν βρέθηκε")
+        report = report_result.data[0]
+
+        category = report.get("category") or "other"
+        dept_slug = CATEGORIES.get(category, "technical_services")
+
+        dept_result = supabase.table("departments").select("id, name").eq("slug", dept_slug).execute()
+        if not dept_result.data:
+            raise HTTPException(status_code=404, detail=f"Τμήμα '{dept_slug}' δεν βρέθηκε")
+        department = dept_result.data[0]
+
+        # Βρες υπάλληλο με τα λιγότερα ενεργά assignments στο τμήμα
+        staff_result = supabase.table("users").select("id, full_name") \
+            .eq("department_id", department["id"]).neq("role", "citizen").execute()
+
+        assigned_staff_id = None
+        assigned_staff_name = None
+        current_min = float("inf")
+
+        for member in (staff_result.data or []):
+            active_count = supabase.table("reports").select("id", count="exact") \
+                .eq("assigned_to", member["id"]) \
+                .in_("status", ["submitted", "in_progress"]).execute()
+            load = active_count.count or 0
+            if load < current_min:
+                current_min = load
+                assigned_staff_id = member["id"]
+                assigned_staff_name = member["full_name"]
+
+        # Claude για αιτιολόγηση
+        ai_context = (
+            f"Αναφορά: κατηγορία={category}, σοβαρότητα={report.get('severity','medium')}, "
+            f"περιγραφή={report.get('description','')}\n"
+            f"Ανάθεση στο τμήμα: {department['name']}"
+            + (f", υπάλληλος: {assigned_staff_name}" if assigned_staff_name else "")
+            + "\nΔώσε 1 σύντομη πρόταση αιτιολόγησης στα ελληνικά."
+        )
+        client = _get_client()
+        ai_resp = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=120,
+            messages=[{"role": "user", "content": ai_context}],
+        )
+        reasoning = ai_resp.content[0].text.strip()
+
+        update_data: dict = {"department_id": department["id"], "status": "assigned"}
+        if assigned_staff_id:
+            update_data["assigned_to"] = assigned_staff_id
+
+        result = supabase.table("reports").update(update_data).eq("id", report_id).execute()
+
+        comment = f"AI Auto-assign → {department['name']}"
+        if assigned_staff_name:
+            comment += f" / {assigned_staff_name}"
+        comment += f". {reasoning}"
+        supabase.table("report_updates").insert({
+            "report_id": report_id,
+            "status": "assigned",
+            "comment": comment,
+        }).execute()
+
+        return {
+            "message": "Αυτόματη ανάθεση ολοκληρώθηκε!",
+            "department": department["name"],
+            "assigned_to": assigned_staff_name,
+            "reasoning": reasoning,
+            "report": result.data[0],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.delete("/{report_id}")
 def delete_report(report_id: str):

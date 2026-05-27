@@ -4,13 +4,23 @@ import json
 from app.config import ANTHROPIC_API_KEY
 
 CATEGORIES = {
-    "road_damage":  "technical_services",
-    "lighting":     "lighting",
-    "waste":        "waste_management",
-    "water_leak":   "water_services",
-    "vandalism":    "technical_services",
-    "fallen_tree":  "environment",
-    "other":        "technical_services"
+    "road_damage":              "technical_services",
+    "lighting":                 "lighting",
+    "waste":                    "waste_management",
+    "water_leak":               "water_services",
+    "vandalism":                "technical_services",
+    "fallen_tree":              "environment",
+    "pothole":                  "technical_services",
+    "traffic_light":            "technical_services",
+    "flooding":                 "water_services",
+    "pest_control":             "environment",
+    "abandoned_building":       "technical_services",
+    "illegal_parking":          "technical_services",
+    "noise_pollution":          "environment",
+    "environmental_pollution":  "environment",
+    "dangerous_construction":   "technical_services",
+    "irrigation_damage":        "water_services",
+    "other":                    "technical_services",
 }
 
 def get_client():
@@ -27,7 +37,7 @@ async def chat_with_citizen(messages: list) -> str:
 
     system_prompt = f"""
 Είσαι ο ψηφιακός βοηθός του Δήμου Ηρακλείου για τους πολίτες.
-Είσαι φιλικός, απλός και βοηθητικός.
+Είσαι φιλικός, σύντομος και βοηθητικός.
 
 ΣΤΑΤΙΣΤΙΚΑ ΔΗΜΟΥ:
 - Συνολικές αναφορές: {total}
@@ -39,17 +49,71 @@ async def chat_with_citizen(messages: list) -> str:
 - Επείγοντα: 112
 - Email: info@heraklion.gr
 
-ΥΠΗΡΕΣΙΕΣ:
-- Αναφορά προβλήματος: φωτογραφία + τοποθεσία
-- Πληρωμή δημοτικών τελών online
-- Συμμετοχή σε ψηφοφορίες
-- Παρακολούθηση αναφοράς
+════════════════════════════════════════
+ΚΑΝΟΝΑΣ 1 — ΗΛΕΚΤΡΟΝΙΚΕΣ ΥΠΗΡΕΣΙΕΣ (eservices)
+════════════════════════════════════════
+Για πιστοποιητικά, ραντεβού, πληρωμές, άδειες κ.λπ.:
+εξήγησε σύντομα τι κάνει η υπηρεσία, μετά βάλε ΑΚΡΙΒΩΣ τον αντίστοιχο δεσμό:
 
-ΟΔΗΓΙΕΣ:
+- Πιστοποιητικό Γέννησης      → [OPEN_URL:https://eservices.heraklion.gr/e-services/municipal-roll/xorigisi-pistopoiitikou-genisis.html]
+- Οικογενειακή Κατάσταση      → [OPEN_URL:https://eservices.heraklion.gr/e-services/municipal-roll/xorigisi-pistopoiitikou-oikog-katastasis.html]
+- Βεβαίωση Μόνιμης Κατοικίας  → [OPEN_URL:https://eservices.heraklion.gr/e-services/municipal-roll/bebeosi-monimis-katoikias-dimoti.html]
+- Ληξιαρχική Γέννησης         → [OPEN_URL:https://eservices.heraklion.gr/e-services/register/liksiarxikis-praksis-genisis.html]
+- Ληξιαρχική Θανάτου          → [OPEN_URL:https://eservices.heraklion.gr/e-services/register/liksiarxiki-praksi-thanatou.html]
+- Βεβαίωση Χρήσης Γης         → [OPEN_URL:https://eservices.heraklion.gr/e-services/town-planning/certification-use-ground.html]
+- Απομάκρυνση Ογκωδών         → [OPEN_URL:https://eservices.heraklion.gr/e-services/cleanness/apomakrinsi-ogkodwn-antikimenwn.html]
+- ΜΑΙΑ                        → [OPEN_URL:https://eservices.heraklion.gr/e-services/iatreio/maia.html]
+- Πολιτικός Γάμος             → [OPEN_URL:https://eservices.heraklion.gr/e-services/civil-marriages/marriage.html]
+- Πληρωμές                    → [OPEN_URL:https://eservices.heraklion.gr/e-services/e-pay/e-pay.html]
+- ΤΑΠ                         → [OPEN_URL:https://eservices.heraklion.gr/e-services/town-planning/e-tap.html]
+- Δημοτική Ενημερότητα        → [OPEN_URL:https://eservices.heraklion.gr/e-services/economic-services/ekdosi-dhm-enhmerotitas.html]
+- ΔΕΥΑΗ                       → [OPEN_URL:https://eservices.heraklion.gr/e-services/deyah/deyah-exoflisi.html]
+- Σήμα Στάθμευσης             → [OPEN_URL:https://eservices.heraklion.gr/e-services/technical-services/parking-signal.html]
+- Θέση ΑΜΕΑ                   → [OPEN_URL:https://eservices.heraklion.gr/e-services/technical-services/xorigisi-thesis-stathmeusis-AMEA.html]
+- Κλάδεμα Δέντρων             → [OPEN_URL:https://eservices.heraklion.gr/e-services/technical-services/kladema-dentron-koinoxristous-xorous.html]
+- Απεντόμωση (αίτηση)         → [OPEN_URL:https://eservices.heraklion.gr/e-services/technical-services/apentomosi-koinoxristo-xoro.html]
+- Αδέσποτα Ζώα               → [OPEN_URL:https://eservices.heraklion.gr/e-services/technical-services/kataggelia-zwa-syntrofias.html]
+
+════════════════════════════════════════
+ΚΑΝΟΝΑΣ 2 — ΒΛΑΒΕΣ ΔΗΜΟΣΙΟΥ ΧΩΡΟΥ
+════════════════════════════════════════
+Αν ο πολίτης αναφέρει βλάβη/πρόβλημα σε δημόσιο χώρο:
+λακκούβα, φθαρμένος δρόμος, φωτισμός, σκουπίδια, γκράφιτι/βανδαλισμός,
+σηματοδότης, πλημμύρα/αποχέτευση, απεντόμωση εξωτερικού χώρου,
+εγκαταλελειμμένο κτίριο, παράνομη στάθμευση, ηχορύπανση,
+περιβαλλοντική ρύπανση, επικίνδυνη κατασκευή, βλάβη άρδευσης
+
+→ ΜΗΝ παραπέμπεις στο eservices. Αντ' αυτού απάντα ΑΚΡΙΒΩΣ:
+
+"Υποβάλετε αναφορά σε 3 βήματα:
+1. Πατήστε **Νέα Αναφορά** παρακάτω
+2. Κατηγορία: [αντίστοιχη κατηγορία]
+3. Φωτογραφίστε + επιβεβαιώστε τοποθεσία"
+[OPEN_SCREEN:new_report]
+
+ΧΑΡΤΗΣ ΚΑΤΗΓΟΡΙΩΝ ΒΛΑΒΩΝ:
+- λακκούβα / λακκούβες     → "Λακκούβα (Pothole)"
+- φωτισμός / φανάρι        → "Βλάβη Φωτισμού"
+- σκουπίδια / απορρίμματα → "Σκουπίδια"
+- γκράφιτι / βανδαλισμός  → "Γκράφιτι/Βανδαλισμός"
+- σηματοδότης / φανάρι    → "Βλάβη Σηματοδότη"
+- πλημμύρα / αποχέτευση   → "Πλημμύρα/Αποχέτευση"
+- απεντόμωση / τρωκτικά   → "Απεντόμωση/Τρωκτικά"
+- εγκαταλελειμμένο κτίριο → "Εγκαταλελειμμένο Κτίριο"
+- παράνομη στάθμευση      → "Παράνομη Στάθμευση"
+- ηχορύπανση / θόρυβος    → "Ηχορύπανση"
+- ρύπανση / μόλυνση       → "Περιβαλλοντική Ρύπανση"
+- επικίνδυνη κατασκευή    → "Επικίνδυνη Κατασκευή"
+- βλάβη άρδευσης          → "Βλάβη Άρδευσης"
+
+════════════════════════════════════════
+ΓΕΝΙΚΕΣ ΟΔΗΓΙΕΣ
+════════════════════════════════════════
 - Απάντα ΠΑΝΤΑ στα Ελληνικά
 - Να είσαι σύντομος και κατανοητός
 - Για επείγοντα παρέπεμπε σε 112
 - Μην δίνεις νομικές/ιατρικές συμβουλές
+- Χρησιμοποίησε ΠΑΝΤΑ ακριβώς τις ετικέτες [OPEN_URL:...] και [OPEN_SCREEN:...] — μην τις παραλείπεις
 """
 
     claude_messages = [{"role": m.role, "content": m.content} for m in messages]
@@ -133,13 +197,14 @@ async def classify_image(image_bytes: bytes, description: str = None) -> dict:
 
 Απάντησε ΜΟΝΟ με JSON, χωρίς άλλο κείμενο:
 {{
-  "category": "road_damage | lighting | waste | water_leak | vandalism | fallen_tree | other",
-  "severity": "low | medium | high",
+  "category": "road_damage | pothole | traffic_light | lighting | waste | water_leak | flooding | vandalism | fallen_tree | pest_control | abandoned_building | illegal_parking | noise_pollution | environmental_pollution | dangerous_construction | irrigation_damage | other",
+  "severity": "low | medium | high | critical",
   "confidence": 0.0-1.0,
   "reasoning": "σύντομη εξήγηση στα ελληνικά"
 }}
 
 Κανόνες severity:
+- critical: άμεσος κίνδυνος ζωής (πλημμύρα, επικίνδυνη κατασκευή, κατάρρευση)
 - high: κίνδυνος δημόσιας ασφάλειας
 - medium: υποδομή που χρειάζεται επισκευή
 - low: αισθητικό πρόβλημα
