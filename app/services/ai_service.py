@@ -21,6 +21,20 @@ CATEGORIES = {
     "dangerous_construction":   "technical_services",
     "irrigation_damage":        "water_services",
     "other":                    "technical_services",
+    # new categories added for Flutter app v2
+    "broken_light":             "lighting",
+    "electrical":               "lighting",
+    "road_sign":                "technical_services",
+    "sidewalk":                 "technical_services",
+    "road_closure":             "technical_services",
+    "garbage":                  "waste_management",
+    "overflowing_bin":          "waste_management",
+    "graffiti":                 "technical_services",
+    "dead_animal":              "environment",
+    "stray_animals":            "environment",
+    "abandoned_vehicle":        "technical_services",
+    "tree_danger":              "environment",
+    "playground":               "technical_services",
 }
 
 def get_client():
@@ -78,10 +92,13 @@ async def chat_with_citizen(messages: list) -> str:
 ΚΑΝΟΝΑΣ 2 — ΒΛΑΒΕΣ ΔΗΜΟΣΙΟΥ ΧΩΡΟΥ
 ════════════════════════════════════════
 Αν ο πολίτης αναφέρει βλάβη/πρόβλημα σε δημόσιο χώρο:
-λακκούβα, φθαρμένος δρόμος, φωτισμός, σκουπίδια, γκράφιτι/βανδαλισμός,
-σηματοδότης, πλημμύρα/αποχέτευση, απεντόμωση εξωτερικού χώρου,
-εγκαταλελειμμένο κτίριο, παράνομη στάθμευση, ηχορύπανση,
-περιβαλλοντική ρύπανση, επικίνδυνη κατασκευή, βλάβη άρδευσης
+λακκούβα, φθαρμένος δρόμος, πεζοδρόμιο, πινακίδα, κλειστός δρόμος,
+φωτισμός, ηλεκτρική βλάβη, σκουπίδια, γεμάτος κάδος,
+γκράφιτι/βανδαλισμός, σηματοδότης, πλημμύρα/αποχέτευση,
+βλάβη άρδευσης, απεντόμωση εξωτερικού χώρου, νεκρό ζώο, αδέσποτα ζώα,
+εγκαταλελειμμένο κτίριο, εγκαταλελειμμένο όχημα, επικίνδυνο δέντρο,
+παιδική χαρά, παράνομη στάθμευση, επικίνδυνη κατασκευή,
+ηχορύπανση, περιβαλλοντική ρύπανση
 
 → ΜΗΝ παραπέμπεις στο eservices. Αντ' αυτού απάντα ΑΚΡΙΒΩΣ:
 
@@ -92,19 +109,30 @@ async def chat_with_citizen(messages: list) -> str:
 [OPEN_SCREEN:new_report]
 
 ΧΑΡΤΗΣ ΚΑΤΗΓΟΡΙΩΝ ΒΛΑΒΩΝ:
-- λακκούβα / λακκούβες     → "Λακκούβα (Pothole)"
-- φωτισμός / φανάρι        → "Βλάβη Φωτισμού"
-- σκουπίδια / απορρίμματα → "Σκουπίδια"
-- γκράφιτι / βανδαλισμός  → "Γκράφιτι/Βανδαλισμός"
-- σηματοδότης / φανάρι    → "Βλάβη Σηματοδότη"
-- πλημμύρα / αποχέτευση   → "Πλημμύρα/Αποχέτευση"
-- απεντόμωση / τρωκτικά   → "Απεντόμωση/Τρωκτικά"
-- εγκαταλελειμμένο κτίριο → "Εγκαταλελειμμένο Κτίριο"
-- παράνομη στάθμευση      → "Παράνομη Στάθμευση"
-- ηχορύπανση / θόρυβος    → "Ηχορύπανση"
-- ρύπανση / μόλυνση       → "Περιβαλλοντική Ρύπανση"
-- επικίνδυνη κατασκευή    → "Επικίνδυνη Κατασκευή"
-- βλάβη άρδευσης          → "Βλάβη Άρδευσης"
+- λακκούβα / λακκούβες        → "Λακκούβα (Pothole)"
+- φθαρμένος δρόμος            → "Οδόστρωμα"
+- πεζοδρόμιο / πεζοδρόμια     → "Βλάβη Πεζοδρομίου"
+- πινακίδα / σήμανση           → "Βλάβη Πινακίδας"
+- κλειστός δρόμος             → "Κλειστός Δρόμος"
+- φωτισμός / φωτιστικό         → "Βλάβη Φωτισμού"
+- ηλεκτρική / ηλεκτρολογική   → "Ηλεκτρική Βλάβη"
+- σκουπίδια / απορρίμματα    → "Σκουπίδια"
+- γεμάτος κάδος / κάδος       → "Γεμάτος Κάδος"
+- γκράφιτι / βανδαλισμός      → "Γκράφιτι/Βανδαλισμός"
+- σηματοδότης / φανάρι        → "Βλάβη Σηματοδότη"
+- πλημμύρα / αποχέτευση       → "Πλημμύρα/Αποχέτευση"
+- βλάβη άρδευσης              → "Βλάβη Άρδευσης"
+- απεντόμωση / τρωκτικά       → "Απεντόμωση/Τρωκτικά"
+- νεκρό ζώο                   → "Νεκρό Ζώο"
+- αδέσποτα / αδέσποτα ζώα     → "Αδέσποτα Ζώα"
+- εγκαταλελειμμένο κτίριο     → "Εγκαταλελειμμένο Κτίριο"
+- εγκαταλελειμμένο όχημα      → "Εγκαταλελειμμένο Όχημα"
+- επικίνδυνο δέντρο / δέντρο  → "Επικίνδυνο Δέντρο"
+- παιδική χαρά / παιχνίδια    → "Βλάβη Παιδικής Χαράς"
+- παράνομη στάθμευση          → "Παράνομη Στάθμευση"
+- επικίνδυνη κατασκευή        → "Επικίνδυνη Κατασκευή"
+- ηχορύπανση / θόρυβος        → "Ηχορύπανση"
+- ρύπανση / μόλυνση           → "Περιβαλλοντική Ρύπανση"
 
 ════════════════════════════════════════
 ΓΕΝΙΚΕΣ ΟΔΗΓΙΕΣ
@@ -197,7 +225,7 @@ async def classify_image(image_bytes: bytes, description: str = None) -> dict:
 
 Απάντησε ΜΟΝΟ με JSON, χωρίς άλλο κείμενο:
 {{
-  "category": "road_damage | pothole | traffic_light | lighting | waste | water_leak | flooding | vandalism | fallen_tree | pest_control | abandoned_building | illegal_parking | noise_pollution | environmental_pollution | dangerous_construction | irrigation_damage | other",
+  "category": "road_damage | pothole | traffic_light | sidewalk | road_sign | road_closure | lighting | broken_light | electrical | waste | garbage | overflowing_bin | water_leak | flooding | irrigation_damage | vandalism | graffiti | fallen_tree | tree_danger | pest_control | dead_animal | stray_animals | abandoned_building | abandoned_vehicle | illegal_parking | dangerous_construction | playground | noise_pollution | environmental_pollution | other",
   "severity": "low | medium | high | critical",
   "confidence": 0.0-1.0,
   "reasoning": "σύντομη εξήγηση στα ελληνικά"
