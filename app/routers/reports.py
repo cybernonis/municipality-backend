@@ -47,14 +47,17 @@ async def create_report(
     description: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     user_id: Optional[str] = Form(None),
-    image: UploadFile = File(...)
+    image: Optional[UploadFile] = File(None),
 ):
     try:
-        image_url = await upload_image(image)
+        image_url = None
+        ai_result = {"category": "other", "severity": "medium", "confidence": 0.0, "department": "technical_services"}
 
-        await image.seek(0)
-        image_bytes = await image.read()
-        ai_result = await classify_image(image_bytes, description)
+        if image is not None:
+            image_url = await upload_image(image)
+            await image.seek(0)
+            image_bytes = await image.read()
+            ai_result = await classify_image(image_bytes, description)
 
         dept = supabase.table("departments")\
             .select("id")\
