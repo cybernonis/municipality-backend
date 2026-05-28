@@ -124,6 +124,23 @@ def award_points(payload: AwardRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/stats/{user_id}")
+def get_user_stats(user_id: str):
+    try:
+        result = supabase.table("user_points").select("*").eq("user_id", user_id).execute()
+        if not result.data:
+            return {"user_id": user_id, "points": 0, "badges": [], "level": 1}
+        row = result.data[0]
+        return {
+            "user_id": user_id,
+            "points": row.get("points", 0),
+            "badges": row.get("badges", []),
+            "level": row.get("level", 1),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/leaderboard")
 def get_leaderboard():
     try:
