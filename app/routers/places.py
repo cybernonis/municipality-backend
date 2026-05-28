@@ -49,20 +49,29 @@ async def places_autocomplete(input: str):
 
 
 @router.get("/details")
-async def places_details(place_id: str):
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(
-                "https://maps.googleapis.com/maps/api/place/details/json",
-                params={
-                    "place_id": place_id,
-                    "key": GOOGLE_PLACES_KEY,
-                    "fields": "geometry,formatted_address",
+async def place_details(place_id: str):
+    try:
+        url = f"https://places.googleapis.com/v1/places/{place_id}"
+        headers = {
+            "X-Goog-Api-Key": GOOGLE_PLACES_KEY,
+            "X-Goog-FieldMask": "location,formattedAddress",
+        }
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=headers, timeout=10.0)
+        data = resp.json()
+        location = data.get("location", {})
+        return {
+            "result": {
+                "geometry": {
+                    "location": {
+                        "lat": location.get("latitude"),
+                        "lng": location.get("longitude"),
+                    }
                 },
-                timeout=10.0,
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except httpx.HTTPError as e:
-            logger.error(f"[places] details error: {e}")
-            raise HTTPException(status_code=502, detail="Google Places request failed")
+                "formatted_address": data.get("formattedAddress", ""),
+            },
+            "status": "OK",
+        }
+    except Exception as e:
+        logger.error(f"[places] details error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
