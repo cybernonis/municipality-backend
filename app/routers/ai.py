@@ -37,5 +37,4 @@ async def chat_citizen(request: ChatRequest):
 
 @router.post("/chat/admin")
 async def chat_admin(request: ChatRequest):
-    result = await chat_with_admin(messages=request.messages)
-    return {"response": result}
+    return await chat_with_admin(messages=request.messages)

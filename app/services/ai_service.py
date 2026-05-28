@@ -1,7 +1,13 @@
 import anthropic
 import base64
 import json
+import logging
+import re
+from datetime import datetime, timezone
+
 from app.config import ANTHROPIC_API_KEY
+
+logger = logging.getLogger(__name__)
 
 CATEGORIES = {
     "road_damage":              "technical_services",
@@ -155,7 +161,72 @@ async def chat_with_citizen(messages: list) -> str:
     return response.content[0].text
 
 
-async def chat_with_admin(messages: list) -> str:
+def _log_task(supabase, task_type: str, payload: dict, status: str) -> None:
+    try:
+        supabase.table("tasks").insert({
+            "type": task_type,
+            "payload": payload,
+            "status": status,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+        logger.info(f"[tasks] Logged task type={task_type} status={status}")
+    except Exception as e:
+        logger.error(f"[tasks] Failed to log task type={task_type}: {e}")
+
+
+def _parse_and_execute_actions(text: str, supabase) -> tuple:
+    """
+    Scans AI response text for structured action tags, executes each action,
+    logs it to the tasks table, and returns (cleaned_text, actions_list).
+    """
+    actions = []
+    cleaned = text
+
+    for match in re.finditer(r'\[CREATE_ANNOUNCEMENT:\s*(.+?)\]', text, re.DOTALL):
+        parts = match.group(1).split(' | ', 1)
+        if len(parts) != 2:
+            continue
+        title, body = parts[0].strip(), parts[1].strip()
+        payload = {"title": title, "body": body}
+        try:
+            supabase.table("announcements").insert({
+                "title": title,
+                "body": body,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }).execute()
+            status = "success"
+            logger.info(f"[admin_action] CREATE_ANNOUNCEMENT title={title!r}")
+        except Exception as e:
+            status = "error"
+            logger.error(f"[admin_action] CREATE_ANNOUNCEMENT failed: {e}")
+        actions.append({"type": "CREATE_ANNOUNCEMENT", "payload": payload, "status": status})
+        _log_task(supabase, "CREATE_ANNOUNCEMENT", payload, status)
+        cleaned = cleaned.replace(match.group(0), "")
+
+    for match in re.finditer(r'\[ASSIGN_REPORT:\s*(.+?)\]', text, re.DOTALL):
+        parts = match.group(1).split(' | ', 1)
+        if len(parts) != 2:
+            continue
+        report_id, department_slug = parts[0].strip(), parts[1].strip()
+        payload = {"report_id": report_id, "department_slug": department_slug}
+        try:
+            supabase.table("reports").update({
+                "department_id": department_slug,
+                "status": "in_progress",
+            }).eq("id", report_id).execute()
+            status = "success"
+            logger.info(f"[admin_action] ASSIGN_REPORT report_id={report_id} dept={department_slug}")
+        except Exception as e:
+            status = "error"
+            logger.error(f"[admin_action] ASSIGN_REPORT failed: {e}")
+        actions.append({"type": "ASSIGN_REPORT", "payload": payload, "status": status})
+        _log_task(supabase, "ASSIGN_REPORT", payload, status)
+        cleaned = cleaned.replace(match.group(0), "")
+
+    return cleaned.strip(), actions
+
+
+async def chat_with_admin(messages: list) -> dict:
     from app.database import supabase
     client = get_client()
 
@@ -201,6 +272,17 @@ SLA ΣΤΟΧΟΙ:
 - Δώσε συγκεκριμένες, actionable συμβουλές
 - Βοήθησε με ανάθεση εργασιών και προτεραιοποίηση
 - Ανάλυσε δεδομένα και δώσε insights
+
+ΔΡΑΣΕΙΣ (προαιρετικά):
+Αν χρειαστεί να εκτελέσεις αυτοματοποιημένη ενέργεια, συμπερίλαβε στην απάντησή σου ΑΚΡΙΒΩΣ μία από τις παρακάτω ετικέτες:
+
+Δημιουργία ανακοίνωσης:
+[CREATE_ANNOUNCEMENT: τίτλος | κείμενο ανακοίνωσης]
+
+Ανάθεση αναφοράς σε τμήμα:
+[ASSIGN_REPORT: report_id | department_slug]
+
+Οι ετικέτες θα εκτελεστούν αυτόματα. Χρησιμοποίησέ τες μόνο αν ο διαχειριστής το ζητήσει ρητά.
 """
 
     claude_messages = [{"role": m.role, "content": m.content} for m in messages]
@@ -211,7 +293,9 @@ SLA ΣΤΟΧΟΙ:
         system=system_prompt,
         messages=claude_messages,
     )
-    return response.content[0].text
+    raw_text = response.content[0].text
+    cleaned_text, actions = _parse_and_execute_actions(raw_text, supabase)
+    return {"response": cleaned_text, "actions": actions}
 
 
 async def classify_image(image_bytes: bytes, description: str = None) -> dict:
@@ -253,7 +337,6 @@ async def classify_image(image_bytes: bytes, description: str = None) -> dict:
     raw_text = message.content[0].text
     print(f"🤖 Claude response: {raw_text}")
 
-    import re
     json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
     if json_match:
         result = json.loads(json_match.group())
