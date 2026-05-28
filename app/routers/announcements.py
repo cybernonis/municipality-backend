@@ -73,3 +73,12 @@ def get_announcements(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{announcement_id}")
+def delete_announcement(announcement_id: str):
+    try:
+        result = supabase.table("announcements").delete().eq("id", announcement_id).execute()
+        return {"message": "Deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
