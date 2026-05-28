@@ -14,20 +14,35 @@ GOOGLE_PLACES_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "AIzaSyDL0a90zxzfj6b
 async def places_autocomplete(input: str):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(
-                "https://maps.googleapis.com/maps/api/place/autocomplete/json",
-                params={
+            resp = await client.post(
+                "https://places.googleapis.com/v1/places:autocomplete",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Goog-Api-Key": GOOGLE_PLACES_KEY,
+                },
+                json={
                     "input": input,
-                    "key": GOOGLE_PLACES_KEY,
-                    "language": "el",
-                    "components": "country:gr",
-                    "location": "35.3387,25.1442",
-                    "radius": "50000",
+                    "languageCode": "el",
+                    "regionCode": "GR",
+                    "locationBias": {
+                        "circle": {
+                            "center": {"latitude": 35.3387, "longitude": 25.1442},
+                            "radius": 50000.0,
+                        }
+                    },
                 },
                 timeout=10.0,
             )
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            predictions = []
+            for s in data.get("suggestions", []):
+                p = s.get("placePrediction", {})
+                predictions.append({
+                    "description": p.get("text", {}).get("text", ""),
+                    "place_id": p.get("placeId", ""),
+                })
+            return {"predictions": predictions, "status": "OK"}
         except httpx.HTTPError as e:
             logger.error(f"[places] autocomplete error: {e}")
             raise HTTPException(status_code=502, detail="Google Places request failed")
