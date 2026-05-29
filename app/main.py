@@ -60,6 +60,23 @@ app.include_router(carbon.router,         prefix="/carbon",         tags=["Carbo
 app.include_router(places.router,         prefix="/places",         tags=["Places"])
 app.include_router(traffic.router,        prefix="/traffic",        tags=["Traffic"])
 
+@app.get("/debug/whoami")
+def debug_whoami():
+    import os
+    from app.database import supabase
+    from app.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+    svc_key = SUPABASE_SERVICE_KEY or ""
+    try:
+        count = supabase.table("announcements").select("*", count="exact").execute().count
+    except Exception as e:
+        count = f"ERROR: {e}"
+    return {
+        "supabase_url": SUPABASE_URL,
+        "service_key_set": bool(svc_key),
+        "service_key_prefix": svc_key[:12] if svc_key else None,
+        "announcements_count": count,
+    }
+
 @app.get("/")
 def root():
     return {"message": "Municipality Reports API", "status": "running", "version": "1.0.0"}
