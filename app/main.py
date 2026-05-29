@@ -13,6 +13,7 @@ from app.routers import external
 from app.routers import announcements, appointments, smart_tips
 from app.routers import gamification, carbon
 from app.routers import places
+from app.routers import traffic
 from app.services.sla_service import check_sla_violations
 from app.routers import staff
 
@@ -57,6 +58,7 @@ app.include_router(smart_tips.router,     prefix="/smart-tips",     tags=["Smart
 app.include_router(gamification.router,   prefix="/gamification",   tags=["Gamification"])
 app.include_router(carbon.router,         prefix="/carbon",         tags=["Carbon"])
 app.include_router(places.router,         prefix="/places",         tags=["Places"])
+app.include_router(traffic.router,        prefix="/traffic",        tags=["Traffic"])
 
 @app.get("/")
 def root():
