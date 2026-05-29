@@ -2,36 +2,49 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from typing import Optional
 
 from app.database import supabase
+from app.services.storage_service import upload_image
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class AnnouncementCreate(BaseModel):
-    title: str
-    body: str
-    category: Optional[str] = "general"
-    admin_id: Optional[str] = None
+async def _try_upload(image: Optional[UploadFile]) -> Optional[str]:
+    """Upload image, return public URL or None on failure (never raises)."""
+    if image is None:
+        return None
+    try:
+        return await upload_image(image)
+    except Exception as e:
+        logger.error(f"[announcements] Image upload failed: {e}")
+        return None
 
 
 @router.post("/")
-async def create_announcement(payload: AnnouncementCreate):
+async def create_announcement(
+    title: str = Form(...),
+    body: str = Form(...),
+    category: Optional[str] = Form("general"),
+    admin_id: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+):
     try:
+        image_url = await _try_upload(image)
+
         announcement = {
             "id": str(uuid.uuid4()),
-            "title": payload.title,
-            "body": payload.body,
-            "category": payload.category,
-            "admin_id": payload.admin_id,
+            "title": title,
+            "body": body,
+            "category": category or "general",
+            "admin_id": admin_id,
+            "image_url": image_url,
         }
         result = supabase.table("announcements").insert(announcement).execute()
 
-        # FCM push σε όλους
+        # FCM push to all users
         try:
             users_result = supabase.table("users").select("fcm_token").execute()
             tokens = [u["fcm_token"] for u in (users_result.data or []) if u.get("fcm_token")]
@@ -39,8 +52,8 @@ async def create_announcement(payload: AnnouncementCreate):
                 from app.services.notification_service import send_push_to_multiple
                 asyncio.create_task(send_push_to_multiple(
                     tokens=tokens,
-                    title=f"📢 {payload.title}",
-                    body=payload.body,
+                    title=f"📢 {title}",
+                    body=body,
                     data={"type": "announcement", "announcement_id": announcement["id"]},
                 ))
         except Exception as e:
@@ -75,10 +88,44 @@ def get_announcements(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.patch("/{announcement_id}")
+async def update_announcement(
+    announcement_id: str,
+    title: Optional[str] = Form(None),
+    body: Optional[str] = Form(None),
+    category: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+):
+    try:
+        data: dict = {}
+        if title is not None:
+            data["title"] = title
+        if body is not None:
+            data["body"] = body
+        if category is not None:
+            data["category"] = category
+
+        image_url = await _try_upload(image)
+        if image_url is not None:
+            data["image_url"] = image_url
+
+        if not data:
+            raise HTTPException(status_code=400, detail="Δεν δόθηκε κανένα πεδίο προς ενημέρωση")
+
+        result = supabase.table("announcements").update(data).eq("id", announcement_id).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Ανακοίνωση δεν βρέθηκε")
+        return {"message": "Ανακοίνωση ενημερώθηκε!", "announcement": result.data[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/{announcement_id}")
 def delete_announcement(announcement_id: str):
     try:
-        result = supabase.table("announcements").delete().eq("id", announcement_id).execute()
+        supabase.table("announcements").delete().eq("id", announcement_id).execute()
         return {"message": "Deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
