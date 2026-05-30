@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from app.models.schemas import UserRegister, UserLogin
 from app.database import supabase
+from app.limiter import limiter
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -31,7 +32,8 @@ def register(user: UserRegister):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/login")
-def login(user: UserLogin):
+@limiter.limit("10/minute")
+def login(request: Request, user: UserLogin):
     try:
         result = supabase.auth.sign_in_with_password({
             "email": user.email,
