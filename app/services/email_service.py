@@ -35,7 +35,7 @@ async def send_email(to: str, subject: str, html: str):
             "api-key": BREVO_API_KEY,
         }
 
-        print(f"CALLING BREVO API...", flush=True)  # ← ΠΡΟΣΘΕΣΕ
+        print("CALLING BREVO API...", flush=True)  # ← ΠΡΟΣΘΕΣΕ
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(BREVO_URL, json=payload, headers=headers)
 

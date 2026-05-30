@@ -100,7 +100,7 @@ def award_points(payload: AwardRequest):
             "level":      new_level,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("user_id", payload.user_id).execute()
-        print(f"[award] user_points updated in DB")
+        print("[award] user_points updated in DB")
 
         new_badges = _compute_badges(payload.user_id, current_badges)
         all_badges = current_badges + new_badges

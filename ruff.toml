@@ -1,0 +1,9 @@
+[lint]
+select = ["E", "F"]
+ignore = [
+    "F401",  # unused imports — some loaded for side-effects or runtime use
+    "F811",  # redefinition of unused name — handled explicitly where needed
+    "F841",  # local variable assigned but never used — common in exception handlers
+    "E501",  # line too long — not enforced in this project
+    "E701",  # multiple statements on one line — intentional in lookup-table style code
+]

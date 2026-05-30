@@ -10,7 +10,6 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.limiter import limiter
-from app.routers import external
 from app.routers import departments, auth, reports, ai, participation, performance, payments
 from app.routers import crisis, sla, predictive, iot, digital_twin
 from app.routers import external

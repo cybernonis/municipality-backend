@@ -19,7 +19,7 @@ def get_latest():
 def run_simulation():
     result = simulate_readings()
     return {
-        "message": f"Simulation ολοκληρώθηκε!",
+        "message": "Simulation ολοκληρώθηκε!",
         "readings_count": len(result["readings"]),
         "alerts_count": len(result["alerts"]),
         "alerts": result["alerts"]
