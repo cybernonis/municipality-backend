@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.database import supabase
@@ -30,10 +30,28 @@ class ProposalCreate(BaseModel):
 
 # --- POLLS ---
 @router.get("/polls")
-def get_polls():
+def get_polls(user_id: Optional[str] = Query(None)):
     try:
         result = supabase.table("polls").select("*").order("created_at", desc=True).execute()
-        return result.data
+        polls = result.data or []
+
+        voted_map: dict = {}
+        if user_id and polls:
+            poll_ids = [p["id"] for p in polls]
+            votes_result = (
+                supabase.table("poll_votes")
+                .select("poll_id, option_index")
+                .eq("user_id", user_id)
+                .in_("poll_id", poll_ids)
+                .execute()
+            )
+            for v in (votes_result.data or []):
+                voted_map[v["poll_id"]] = v["option_index"]
+
+        for poll in polls:
+            poll["user_voted_option"] = voted_map.get(poll["id"])  # None if not voted
+
+        return polls
     except Exception as e:
         logger.error(f"get_polls error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -104,15 +122,16 @@ def get_poll_results(poll_id: str):
 
 @router.post("/polls/vote")
 def vote_poll(vote: VoteCreate):
-    # Έλεγξε αν έχει ήδη ψηφίσει
-    existing = supabase.table("poll_votes")\
-        .select("id")\
-        .eq("poll_id", vote.poll_id)\
-        .eq("user_id", vote.user_id)\
+    # Pre-check: αποτροπή διπλής ψήφου
+    existing = (
+        supabase.table("poll_votes")
+        .select("id")
+        .eq("poll_id", vote.poll_id)
+        .eq("user_id", vote.user_id)
         .execute()
-
+    )
     if existing.data:
-        raise HTTPException(status_code=400, detail="Έχετε ήδη ψηφίσει")
+        raise HTTPException(status_code=409, detail="Έχεις ήδη ψηφίσει σε αυτή την ψηφοφορία.")
 
     data = {
         "id": str(uuid.uuid4()),
@@ -120,8 +139,14 @@ def vote_poll(vote: VoteCreate):
         "user_id": vote.user_id,
         "option_index": vote.option_index,
     }
-    result = supabase.table("poll_votes").insert(data).execute()
-    return {"message": "Η ψήφος καταχωρήθηκε!", "vote": result.data[0]}
+    try:
+        result = supabase.table("poll_votes").insert(data).execute()
+        return {"message": "Η ψήφος καταχωρήθηκε!", "vote": result.data[0]}
+    except Exception as e:
+        # Second line of defence: unique constraint violation (23505)
+        if "23505" in str(e):
+            raise HTTPException(status_code=409, detail="Έχεις ήδη ψηφίσει σε αυτή την ψηφοφορία.")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- PROPOSALS ---
 @router.get("/proposals")
