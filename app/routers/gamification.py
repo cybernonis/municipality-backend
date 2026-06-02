@@ -14,6 +14,8 @@ XP_MAP = {
     "report_resolved":  50,
     "first_report":     100,
     "rating_given":     5,
+    "volunteering":     25,
+    "donation":         25,
 }
 
 BADGE_THRESHOLDS = [
@@ -24,7 +26,17 @@ BADGE_THRESHOLDS = [
 
 
 def _level_for(points: int) -> int:
-    return max(1, points // 100 + 1)
+    if points < 100:
+        return 1
+    if points < 250:
+        return 2
+    if points < 500:
+        return 3
+    if points < 1000:
+        return 4
+    if points < 2000:
+        return 5
+    return 6 + (points - 2000) // 1000
 
 
 def _compute_badges(user_id: str, current_badges: list) -> list:
@@ -63,31 +75,34 @@ def award_points(payload: AwardRequest):
             status_code=400,
             detail=f"Άγνωστη action. Επιτρεπτές: {list(XP_MAP)}",
         )
-    print(f"[award] user_id={payload.user_id} action={payload.action}")
+    user_id = payload.user_id
+    action = payload.action
+    print(f"[AWARD XP] user_id={user_id}, action={action}")
     try:
-        existing = supabase.table("user_points").select("*").eq("user_id", payload.user_id).execute()
+        existing = supabase.table("user_points").select("*").eq("user_id", user_id).execute()
         print(f"[award] existing record found: {bool(existing.data)}")
 
         if existing.data:
             record = existing.data[0]
         else:
-            print(f"[award] No record — inserting new user_points row for user_id={payload.user_id}")
+            print(f"[award] No record — inserting new user_points row for user_id={user_id}")
             init = supabase.table("user_points").insert({
-                "user_id": payload.user_id,
-                "points": 0,
-                "badges": [],
-                "level": 1,
+                "user_id":      user_id,
+                "points":       0,
+                "badges":       [],
+                "level":        1,
                 "carbon_saved": 0.0,
             }).execute()
             record = init.data[0]
 
-        current_points  = record["points"]
-        current_badges  = record.get("badges") or []
-        current_level   = record["level"]
+        current_points = record["points"]
+        current_badges = record.get("badges") or []
+        current_level  = record["level"]
         print(f"[award] current: points={current_points}, level={current_level}, badges={current_badges}")
 
-        xp = XP_MAP[payload.action]
-        if payload.action == "first_report" and "Πρώτη Αναφορά" in current_badges:
+        xp = XP_MAP[action]
+        is_first_report = action == "first_report"
+        if is_first_report and "Πρώτη Αναφορά" in current_badges:
             print("[award] first_report already awarded — skipping XP")
             xp = 0
 
@@ -99,22 +114,18 @@ def award_points(payload: AwardRequest):
             "points":     new_points,
             "level":      new_level,
             "updated_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("user_id", payload.user_id).execute()
+        }).eq("user_id", user_id).execute()
         print("[award] user_points updated in DB")
 
-        new_badges = _compute_badges(payload.user_id, current_badges)
-        all_badges = current_badges + new_badges
+        new_badges = _compute_badges(user_id, current_badges)
 
-        print(f"[award] Done. xp={xp}, total={new_points}, new_badges={new_badges}")
+        print(f"[AWARD XP] xp_awarded={xp}, total={new_points}, badges={new_badges}")
         return {
-            "user_id":      payload.user_id,
-            "action":       payload.action,
             "xp_awarded":   xp,
             "total_points": new_points,
             "level":        new_level,
-            "leveled_up":   new_level > current_level,
             "new_badges":   new_badges,
-            "all_badges":   all_badges,
+            "first_report": is_first_report,
         }
     except HTTPException:
         raise
@@ -133,9 +144,9 @@ def get_user_stats(user_id: str):
         row = result.data[0]
         return {
             "user_id": user_id,
-            "points": row.get("points", 0),
-            "badges": row.get("badges", []),
-            "level": row.get("level", 1),
+            "points":  row.get("points", 0),
+            "badges":  row.get("badges", []),
+            "level":   row.get("level", 1),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -144,50 +155,42 @@ def get_user_stats(user_id: str):
 @router.get("/leaderboard")
 def get_leaderboard():
     try:
-        print("[leaderboard] Fetching top 10 from user_points...")
-        points_result = (
+        print("[leaderboard] Fetching top 50 from user_points...")
+        points_resp = (
             supabase.table("user_points")
-            .select("user_id, points, badges, level")
+            .select("user_id, points, level, badges")
             .order("points", desc=True)
-            .limit(10)
+            .limit(50)
             .execute()
         )
-        rows = points_result.data or []
-        print(f"[leaderboard] Got {len(rows)} rows")
 
-        user_ids = [row["user_id"] for row in rows]
-        name_map: dict = {}
-        if user_ids:
-            try:
-                users_result = (
-                    supabase.table("users")
-                    .select("id, full_name")
-                    .in_("id", user_ids)
-                    .execute()
-                )
-                name_map = {
-                    u["id"]: u.get("full_name") or "Ανώνυμος"
-                    for u in (users_result.data or [])
-                }
-                print(f"[leaderboard] Resolved {len(name_map)} display names")
-            except Exception as name_err:
-                print(f"[leaderboard] WARNING: could not fetch user names: {name_err}")
+        if not points_resp.data:
+            return {"leaderboard": []}
 
-        leaderboard = [
-            {
-                "rank":         rank,
-                "user_id":      row["user_id"],
-                "display_name": name_map.get(row["user_id"], "Ανώνυμος"),
-                "points":       row["points"],
-                "badges":       row.get("badges") or [],
-                "level":        row["level"],
-            }
-            for rank, row in enumerate(rows, start=1)
-        ]
-        return {"leaderboard": leaderboard, "total": len(leaderboard)}
-    except HTTPException:
-        raise
+        user_ids = [r["user_id"] for r in points_resp.data]
+        users_resp = (
+            supabase.table("users")
+            .select("id, full_name, email")
+            .in_("id", user_ids)
+            .execute()
+        )
+
+        users_map = {u["id"]: u for u in (users_resp.data or [])}
+        leaderboard = []
+        for i, row in enumerate(points_resp.data):
+            user = users_map.get(row["user_id"], {})
+            leaderboard.append({
+                "rank":      i + 1,
+                "user_id":   row["user_id"],
+                "full_name": user.get("full_name", "Ανώνυμος"),
+                "points":    row["points"],
+                "level":     row["level"],
+                "badges":    row["badges"] or [],
+            })
+
+        print(f"[leaderboard] Returning {len(leaderboard)} entries")
+        return {"leaderboard": leaderboard}
+
     except Exception as e:
-        import traceback
-        logger.error(f"get_leaderboard ERROR: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[LEADERBOARD ERROR] {e}")
+        return {"leaderboard": []}
