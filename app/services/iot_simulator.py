@@ -1,9 +1,50 @@
 import random
 from datetime import datetime, timezone
-from app.database import supabase
+from app.database import supabase, get_supabase
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def gateway_heartbeat():
+    """
+    Ενημερώνει last_seen + signal_strength για κάθε gateway.
+    1% chance: gateway goes offline → connected sensors → offline.
+    """
+    try:
+        client = get_supabase()
+        gateways = client.table("iot_gateways").select("gateway_id, status").execute()
+        if not gateways.data:
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+        offline_count = 0
+
+        for gw in gateways.data:
+            gw_id = gw["gateway_id"]
+            goes_offline = gw["status"] == "online" and random.random() < 0.01
+
+            update = {
+                "last_seen":       now,
+                "signal_strength": random.randint(-70, -50),
+            }
+            if goes_offline:
+                update["status"] = "offline"
+                offline_count += 1
+                # Connected sensors → offline
+                client.table("iot_sensors").update({"status": "offline"}).eq("gateway_id", gw_id).execute()
+                print(f"[HEARTBEAT] Gateway {gw_id} went offline — sensors updated")
+            elif gw["status"] == "offline" and random.random() < 0.3:
+                # 30% chance to recover
+                update["status"] = "online"
+                client.table("iot_sensors").update({"status": "active"}).eq("gateway_id", gw_id).execute()
+                print(f"[HEARTBEAT] Gateway {gw_id} recovered → online")
+
+            client.table("iot_gateways").update(update).eq("gateway_id", gw_id).execute()
+
+        logger.info(f"[HEARTBEAT] {len(gateways.data)} gateways updated, {offline_count} went offline")
+    except Exception as e:
+        logger.error(f"[HEARTBEAT ERROR] {e}")
 
 def simulate_readings():
     """Δημιουργεί προσομοιωμένες μετρήσεις για όλες τις συσκευές"""
@@ -118,6 +159,10 @@ def simulate_readings():
         supabase.table("iot_readings").insert(readings).execute()
     
     logger.info(f"✅ IoT: {len(readings)} readings, {len(alerts)} alerts")
+
+    # Gateway heartbeat σε κάθε simulation cycle
+    gateway_heartbeat()
+
     return {"readings": readings, "alerts": alerts}
 
 
