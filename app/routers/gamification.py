@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.database import supabase
+from app.database import get_supabase
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,12 +17,6 @@ XP_MAP = {
     "volunteering":     25,
     "donation":         25,
 }
-
-BADGE_THRESHOLDS = [
-    (1,  "Πρώτη Αναφορά"),
-    (10, "10 Αναφορές"),
-    (50, "Super Citizen"),
-]
 
 
 def _level_for(points: int) -> int:
@@ -39,94 +33,105 @@ def _level_for(points: int) -> int:
     return 6 + (points - 2000) // 1000
 
 
-def _compute_badges(user_id: str, current_badges: list) -> list:
-    print(f"[badges] Computing for user_id={user_id}, current_badges={current_badges}")
-    result = supabase.table("reports").select("id", count="exact").eq("user_id", user_id).execute()
-    total_reports = result.count or 0
-    print(f"[badges] user_id={user_id} total_reports={total_reports}")
-
-    new_badges = []
-    if total_reports >= 1  and "Πρώτη Αναφορά" not in current_badges:
-        new_badges.append("Πρώτη Αναφορά")
-    if total_reports >= 10 and "10 Αναφορές"   not in current_badges:
-        new_badges.append("10 Αναφορές")
-    if total_reports >= 50 and "Super Citizen"  not in current_badges:
-        new_badges.append("Super Citizen")
-
-    print(f"[badges] new_badges={new_badges}")
-
-    if new_badges:
-        all_badges = current_badges + new_badges
-        supabase.table("user_points").update({"badges": all_badges}).eq("user_id", user_id).execute()
-        print(f"[badges] DB updated with all_badges={all_badges}")
-
-    return new_badges
-
-
 class AwardRequest(BaseModel):
     user_id: str
     action: str
 
 
 @router.post("/award")
-def award_points(payload: AwardRequest):
+async def award_points(payload: AwardRequest):
     if payload.action not in XP_MAP:
         raise HTTPException(
             status_code=400,
             detail=f"Άγνωστη action. Επιτρεπτές: {list(XP_MAP)}",
         )
+
     user_id = payload.user_id
-    action = payload.action
+    action  = payload.action
     print(f"[AWARD XP] user_id={user_id}, action={action}")
+
     try:
-        existing = supabase.table("user_points").select("*").eq("user_id", user_id).execute()
-        print(f"[award] existing record found: {bool(existing.data)}")
+        client = get_supabase()
+
+        # 1. Διάβασε τρέχον record
+        existing = client.table("user_points").select("*").eq("user_id", user_id).execute()
+        print(f"[UPSERT] Existing record: {existing.data}")
+
+        current_points = 0
+        current_badges: list = []
 
         if existing.data:
-            record = existing.data[0]
-        else:
-            print(f"[award] No record — inserting new user_points row for user_id={user_id}")
-            init = supabase.table("user_points").insert({
-                "user_id":      user_id,
-                "points":       0,
-                "badges":       [],
-                "level":        1,
-                "carbon_saved": 0.0,
-            }).execute()
-            record = init.data[0]
+            current_points = existing.data[0].get("points", 0) or 0
+            current_badges = existing.data[0].get("badges") or []
 
-        current_points = record["points"]
-        current_badges = record.get("badges") or []
-        current_level  = record["level"]
-        print(f"[award] current: points={current_points}, level={current_level}, badges={current_badges}")
-
+        # 2. Υπολόγισε νέα XP
         xp = XP_MAP[action]
         is_first_report = action == "first_report"
         if is_first_report and "Πρώτη Αναφορά" in current_badges:
-            print("[award] first_report already awarded — skipping XP")
+            print("[AWARD XP] first_report already awarded — skipping XP")
             xp = 0
 
-        new_points = current_points + xp
-        new_level  = _level_for(new_points)
-        print(f"[award] xp_awarded={xp}, new_points={new_points}, new_level={new_level}")
+        new_total = current_points + xp
+        new_level = _level_for(new_total)
 
-        supabase.table("user_points").update({
-            "points":     new_points,
-            "level":      new_level,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("user_id", user_id).execute()
-        print("[award] user_points updated in DB")
+        # 3. Υπολόγισε badges από reports count
+        reports_resp = (
+            client.table("reports")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        count = reports_resp.count or 0
+        print(f"[AWARD XP] reports count={count}")
 
-        new_badges = _compute_badges(user_id, current_badges)
+        new_badges = list(current_badges)
+        if count >= 1  and "Πρώτη Αναφορά" not in new_badges:
+            new_badges.append("Πρώτη Αναφορά")
+        if count >= 10 and "10 Αναφορές"   not in new_badges:
+            new_badges.append("10 Αναφορές")
+        if count >= 50 and "Super Citizen"  not in new_badges:
+            new_badges.append("Super Citizen")
 
-        print(f"[AWARD XP] xp_awarded={xp}, total={new_points}, badges={new_badges}")
+        added_badges = [b for b in new_badges if b not in current_badges]
+
+        # 4. UPSERT στο Supabase
+        print(f"[UPSERT] Writing user_id={user_id}, points={new_total}, level={new_level}, badges={new_badges}")
+
+        if existing.data:
+            result = (
+                client.table("user_points")
+                .update({
+                    "points": new_total,
+                    "level":  new_level,
+                    "badges": new_badges,
+                })
+                .eq("user_id", user_id)
+                .execute()
+            )
+        else:
+            result = (
+                client.table("user_points")
+                .insert({
+                    "user_id":      user_id,
+                    "points":       new_total,
+                    "level":        new_level,
+                    "badges":       new_badges,
+                    "carbon_saved": 0,
+                })
+                .execute()
+            )
+
+        print(f"[UPSERT] Result data: {result.data}")
+        print(f"[AWARD XP] xp_awarded={xp}, total={new_total}, badges={added_badges}")
+
         return {
             "xp_awarded":   xp,
-            "total_points": new_points,
+            "total_points": new_total,
             "level":        new_level,
-            "new_badges":   new_badges,
-            "first_report": is_first_report,
+            "new_badges":   added_badges,
+            "first_report": count == 1,
         }
+
     except HTTPException:
         raise
     except Exception as e:
@@ -135,29 +140,61 @@ def award_points(payload: AwardRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/stats/{user_id}")
-def get_user_stats(user_id: str):
+@router.get("/user-points/{user_id}")
+async def get_user_points(user_id: str):
     try:
-        result = supabase.table("user_points").select("*").eq("user_id", user_id).execute()
+        client = get_supabase()
+        result = client.table("user_points").select("*").eq("user_id", user_id).execute()
+
+        if not result.data:
+            return {
+                "user_id":      user_id,
+                "points":       0,
+                "level":        1,
+                "badges":       [],
+                "carbon_saved": 0,
+            }
+
+        row = result.data[0]
+        return {
+            "user_id":      row["user_id"],
+            "points":       row.get("points", 0) or 0,
+            "level":        row.get("level", 1) or 1,
+            "badges":       row.get("badges") or [],
+            "carbon_saved": row.get("carbon_saved", 0) or 0,
+        }
+
+    except Exception as e:
+        print(f"[USER POINTS ERROR] {e}")
+        return {"user_id": user_id, "points": 0, "level": 1, "badges": [], "carbon_saved": 0}
+
+
+@router.get("/stats/{user_id}")
+async def get_user_stats(user_id: str):
+    try:
+        client = get_supabase()
+        result = client.table("user_points").select("*").eq("user_id", user_id).execute()
         if not result.data:
             return {"user_id": user_id, "points": 0, "badges": [], "level": 1}
         row = result.data[0]
         return {
             "user_id": user_id,
-            "points":  row.get("points", 0),
-            "badges":  row.get("badges", []),
-            "level":   row.get("level", 1),
+            "points":  row.get("points", 0) or 0,
+            "badges":  row.get("badges") or [],
+            "level":   row.get("level", 1) or 1,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/leaderboard")
-def get_leaderboard():
+async def get_leaderboard():
     try:
+        client = get_supabase()
         print("[leaderboard] Fetching top 50 from user_points...")
+
         points_resp = (
-            supabase.table("user_points")
+            client.table("user_points")
             .select("user_id, points, level, badges")
             .order("points", desc=True)
             .limit(50)
@@ -169,7 +206,7 @@ def get_leaderboard():
 
         user_ids = [r["user_id"] for r in points_resp.data]
         users_resp = (
-            supabase.table("users")
+            client.table("users")
             .select("id, full_name, email")
             .in_("id", user_ids)
             .execute()
@@ -183,9 +220,9 @@ def get_leaderboard():
                 "rank":      i + 1,
                 "user_id":   row["user_id"],
                 "full_name": user.get("full_name", "Ανώνυμος"),
-                "points":    row["points"],
-                "level":     row["level"],
-                "badges":    row["badges"] or [],
+                "points":    row.get("points", 0) or 0,
+                "level":     row.get("level", 1) or 1,
+                "badges":    row.get("badges") or [],
             })
 
         print(f"[leaderboard] Returning {len(leaderboard)} entries")
