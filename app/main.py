@@ -18,6 +18,7 @@ from app.routers import gamification, carbon
 from app.routers import gdpr
 from app.routers import places
 from app.routers import traffic
+from app.routers import closed_roads
 from app.services.sla_service import check_sla_violations
 from app.routers import staff
 
@@ -68,6 +69,7 @@ app.include_router(carbon.router,         prefix="/carbon",         tags=["Carbo
 app.include_router(gdpr.router,           prefix="/gdpr",           tags=["GDPR"])
 app.include_router(places.router,         prefix="/places",         tags=["Places"])
 app.include_router(traffic.router,        prefix="/traffic",        tags=["Traffic"])
+app.include_router(closed_roads.router,   prefix="/closed-roads",   tags=["Closed Roads"])
 
 @app.get("/")
 def root():
