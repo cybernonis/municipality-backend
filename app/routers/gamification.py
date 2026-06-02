@@ -191,7 +191,11 @@ async def get_user_stats(user_id: str):
 async def get_leaderboard():
     try:
         client = get_supabase()
-        print("[leaderboard] Fetching top 50 from user_points...")
+        print("[LEADERBOARD] Starting query...")
+
+        # RLS / connectivity check — αν count==0 ενώ έχουμε records → RLS block
+        test = client.table("user_points").select("count", count="exact").execute()
+        print(f"[LEADERBOARD] Table count: {test.count}")
 
         points_resp = (
             client.table("user_points")
@@ -201,10 +205,16 @@ async def get_leaderboard():
             .execute()
         )
 
+        print(f"[LEADERBOARD] Raw data: {points_resp.data}")
+        print(f"[LEADERBOARD] Count: {len(points_resp.data) if points_resp.data else 0}")
+
         if not points_resp.data:
+            print("[LEADERBOARD] No data found — returning empty list")
             return {"leaderboard": []}
 
         user_ids = [r["user_id"] for r in points_resp.data]
+        print(f"[LEADERBOARD] User IDs: {user_ids}")
+
         users_resp = (
             client.table("users")
             .select("id, full_name, email")
@@ -212,22 +222,29 @@ async def get_leaderboard():
             .execute()
         )
 
+        print(f"[LEADERBOARD] Users found: {users_resp.data}")
+
         users_map = {u["id"]: u for u in (users_resp.data or [])}
-        leaderboard = []
+
+        leaderboard = []  # ΠΑΝΤΑ list, ποτέ dict
         for i, row in enumerate(points_resp.data):
-            user = users_map.get(row["user_id"], {})
-            leaderboard.append({
+            user = users_map.get(row.get("user_id"), {})
+            entry = {
                 "rank":      i + 1,
-                "user_id":   row["user_id"],
+                "user_id":   row.get("user_id", ""),
                 "full_name": user.get("full_name", "Ανώνυμος"),
                 "points":    row.get("points", 0) or 0,
                 "level":     row.get("level", 1) or 1,
                 "badges":    row.get("badges") or [],
-            })
+            }
+            leaderboard.append(entry)
+            print(f"[LEADERBOARD] Entry {i + 1}: {entry}")
 
-        print(f"[leaderboard] Returning {len(leaderboard)} entries")
+        print(f"[LEADERBOARD] Final list length: {len(leaderboard)}")
         return {"leaderboard": leaderboard}
 
     except Exception as e:
-        print(f"[LEADERBOARD ERROR] {e}")
+        print(f"[LEADERBOARD ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {"leaderboard": []}
