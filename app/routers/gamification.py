@@ -216,7 +216,7 @@ async def get_leaderboard():
         print(f"[LEADERBOARD] User IDs: {user_ids}")
 
         users_resp = (
-            client.table("users")
+            client.table("user_profiles")
             .select("id, full_name, email")
             .in_("id", user_ids)
             .execute()
