@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     backend_url: str = "https://municipality-backend-production.up.railway.app"
     log_level: str = "INFO"
     environment: str = "production"
+    rate_limit_global: str = "300/minute"  # DoS backstop; override via RATE_LIMIT_GLOBAL env var
 
     class Config:
         env_file = ".env"

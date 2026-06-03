@@ -4,10 +4,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 
 from app.database import supabase
 from app.dependencies import require_admin, require_permission
+from app.limiter import limiter
 from app.services.storage_service import upload_image
 from app.utils.sanitize import sanitize_text
 
@@ -56,7 +57,9 @@ async def _push_announcement(title: str, body: str, announcement_id: str):
 
 
 @router.post("/")
+@limiter.limit("30/minute")
 async def create_announcement(
+    request: Request,
     title: str = Form(...),
     content: Optional[str] = Form(None),
     body: Optional[str] = Form(None),

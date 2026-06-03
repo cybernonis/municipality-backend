@@ -264,7 +264,8 @@ async def _record_login_session(user_id: str, ip: str, user_agent: str, email: s
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/register")
-async def register(user: UserRegister):
+@limiter.limit("5/minute")
+async def register(request: Request, user: UserRegister):
     try:
         result = supabase.auth.sign_up({"email": user.email, "password": user.password})
 

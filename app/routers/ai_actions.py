@@ -1,12 +1,13 @@
 import time
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 
 from app.database import get_supabase
 from app.dependencies import require_admin, require_permission
+from app.limiter import limiter
 from app.services.ai_actions import parse_admin_intent, execute_action, ACTIONS_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ class ExecuteRequest(BaseModel):
 
 
 @router.post("/parse")
-async def parse_intent(req: IntentRequest, _admin: dict = Depends(require_admin)):
+@limiter.limit("30/minute")
+async def parse_intent(request: Request, req: IntentRequest, _admin: dict = Depends(require_admin)):
     """Step 1 — Parse admin message → return intent + audit_id"""
     start = time.time()
     try:
@@ -66,7 +68,8 @@ async def parse_intent(req: IntentRequest, _admin: dict = Depends(require_admin)
 
 
 @router.post("/execute")
-async def execute_intent(req: ExecuteRequest, _user: dict = Depends(require_permission("ai_actions:execute"))):
+@limiter.limit("20/minute")
+async def execute_intent(request: Request, req: ExecuteRequest, _user: dict = Depends(require_permission("ai_actions:execute"))):
     """Step 2 — Execute confirmed intent"""
     start  = time.time()
     client = get_supabase()

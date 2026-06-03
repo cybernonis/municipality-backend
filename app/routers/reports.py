@@ -4,11 +4,12 @@ import uuid
 from typing import Optional
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
 from app.config import ANTHROPIC_API_KEY
 from app.database import supabase
 from app.dependencies import require_permission
+from app.limiter import limiter
 from app.services.ai_service import classify_image, CATEGORIES
 from app.services.storage_service import upload_image
 from app.utils.sanitize import sanitize_text
@@ -45,7 +46,9 @@ def get_report(report_id: str):
     return result.data[0]
 
 @router.post("/")
+@limiter.limit("20/minute")
 async def create_report(
+    request: Request,
     latitude: float = Form(...),
     longitude: float = Form(...),
     description: Optional[str] = Form(None),
