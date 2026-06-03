@@ -5,8 +5,8 @@ from typing import List
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.responses import Response
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -49,8 +49,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
-if settings.environment == "production":
-    app.add_middleware(HTTPSRedirectMiddleware)
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
