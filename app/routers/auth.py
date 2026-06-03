@@ -216,10 +216,14 @@ def _generate_recovery_codes(user_id: str) -> list:
 # ── D. Login session tracking ─────────────────────────────────────────────────
 
 async def _record_login_session(user_id: str, ip: str, user_agent: str, email: str) -> None:
-    """Insert session row; email the user if this is a new device. Never raises."""
+    """Insert session row synchronously; schedule new-device email as fire-and-forget. Never raises."""
     client = get_supabase()
+    ua_stored    = user_agent[:512]
+    device_label = _parse_device_label(user_agent)
+    is_new_device = False
+
+    # ── Insert first — must complete before email attempt ─────────────────────
     try:
-        ua_stored = user_agent[:512]
         existing = (
             client.table("login_sessions")
             .select("id")
@@ -229,7 +233,6 @@ async def _record_login_session(user_id: str, ip: str, user_agent: str, email: s
             .execute()
         )
         is_new_device = not existing.data
-        device_label = _parse_device_label(user_agent)
 
         client.table("login_sessions").insert({
             "user_id":      user_id,
@@ -237,19 +240,23 @@ async def _record_login_session(user_id: str, ip: str, user_agent: str, email: s
             "user_agent":   ua_stored,
             "device_label": device_label,
         }).execute()
+        logger.info(f"[LOGIN SESSION] Recorded user_id={user_id} ip={ip} device={device_label}")
+    except Exception as e:
+        logger.error(f"[LOGIN SESSION] Insert FAILED user_id={user_id}: {type(e).__name__}: {e}")
 
-        if is_new_device and email:
-            when = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    # ── New-device email — fire-and-forget, never blocks insert or login ──────
+    if is_new_device and email:
+        async def _send():
             try:
+                when = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
                 await send_email(
                     to=email,
                     subject="Νέα σύνδεση από νέα συσκευή — Δήμος Ηρακλείου",
                     html=_new_device_html(ip, device_label, when),
                 )
-            except Exception as e:
-                logger.warning(f"[NEW DEVICE EMAIL] {e}")
-    except Exception as e:
-        logger.warning(f"[LOGIN SESSION] {e}")
+            except Exception as exc:
+                logger.warning(f"[NEW DEVICE EMAIL] {exc}")
+        asyncio.create_task(_send())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -365,13 +372,13 @@ async def login(request: Request, user: UserLogin):
         except Exception as mfa_err:
             logger.warning(f"[MFA ENFORCEMENT] {mfa_err}")
 
-    # D — record session; fire-and-forget (must not block login on failure)
-    asyncio.create_task(_record_login_session(
+    # D — record session (awaited; insert is fast and wrapped — login never aborts on failure)
+    await _record_login_session(
         user_id=result.user.id,
         ip=ip,
         user_agent=user_agent,
         email=result.user.email,
-    ))
+    )
 
     return {
         "access_token":  result.session.access_token,
