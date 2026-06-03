@@ -331,6 +331,14 @@ async def login(request: Request, user: UserLogin):
 
     _record_attempt(user.email, ip, True)
 
+    # D — record session immediately on password success, before any MFA early-return
+    await _record_login_session(
+        user_id=result.user.id,
+        ip=ip,
+        user_agent=user_agent,
+        email=result.user.email,
+    )
+
     # Email verification gate
     user_row = supabase.table("users").select("id, email_verified, role").eq("id", result.user.id).execute()
     if user_row.data and not user_row.data[0].get("email_verified", False):
@@ -371,14 +379,6 @@ async def login(request: Request, user: UserLogin):
                     }
         except Exception as mfa_err:
             logger.warning(f"[MFA ENFORCEMENT] {mfa_err}")
-
-    # D — record session (awaited; insert is fast and wrapped — login never aborts on failure)
-    await _record_login_session(
-        user_id=result.user.id,
-        ip=ip,
-        user_agent=user_agent,
-        email=result.user.email,
-    )
 
     return {
         "access_token":  result.session.access_token,
