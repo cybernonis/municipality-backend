@@ -1,6 +1,7 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File
 from typing import Optional, List
 from app.services.ai_service import classify_image, chat_with_claude, chat_with_citizen, chat_with_admin
+from app.dependencies import require_admin
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -36,5 +37,5 @@ async def chat_citizen(request: ChatRequest):
     return {"response": result}
 
 @router.post("/chat/admin")
-async def chat_admin(request: ChatRequest):
+async def chat_admin(request: ChatRequest, _admin: dict = Depends(require_admin)):
     return await chat_with_admin(messages=request.messages)

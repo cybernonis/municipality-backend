@@ -3,11 +3,13 @@ import json
 import logging
 from typing import List
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.limiter import limiter
 from app.routers import departments, auth, reports, ai, participation, performance, payments
@@ -25,6 +27,19 @@ from app.routers import staff
 
 logger = logging.getLogger(__name__)
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+
 app = FastAPI(
     title="Municipality Reports API",
     description="Smart Municipality Issue Reporting System — Ηράκλειο",
@@ -34,6 +49,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,7 +57,6 @@ app.add_middleware(
         "https://municipality-dashboard-alpha.vercel.app",
         "http://localhost:3000",
         "http://localhost:5173",
-        "*",
     ],
     allow_credentials=True,
     allow_methods=["*"],

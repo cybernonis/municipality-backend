@@ -1,12 +1,13 @@
 import logging
 import os
 import secrets
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from app.database import supabase
+from app.database import supabase, get_supabase
 from app.limiter import limiter
 from app.models.schemas import UserRegister, UserLogin
 from app.services.email_service import send_email
@@ -15,6 +16,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 BACKEND_URL = os.getenv("BACKEND_URL", "https://municipality-backend-production.up.railway.app")
+_MAX_ATTEMPTS = 5
+_BLOCK_MINUTES = 15
 
 
 class FCMTokenUpdate(BaseModel):
@@ -24,6 +27,10 @@ class FCMTokenUpdate(BaseModel):
 
 class ResendVerificationRequest(BaseModel):
     email: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 def _verification_html(token: str) -> str:
@@ -44,6 +51,67 @@ def _verification_html(token: str) -> str:
       </div>
     </div>
     """
+
+
+# ── Brute-force helpers ───────────────────────────────────────────────────────
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_brute_force(ip: str) -> None:
+    """Raise 429 if IP is currently blocked."""
+    client = get_supabase()
+    now = datetime.now(timezone.utc)
+    try:
+        row = client.table("login_attempts").select("attempts, blocked_until").eq("ip_address", ip).execute()
+        if not row.data:
+            return
+        rec = row.data[0]
+        blocked_until = rec.get("blocked_until")
+        if blocked_until:
+            bu = datetime.fromisoformat(blocked_until.replace("Z", "+00:00"))
+            if now < bu:
+                remaining = int((bu - now).total_seconds() / 60) + 1
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Πολλές αποτυχημένες προσπάθειες. Δοκιμάστε ξανά σε {remaining} λεπτά.",
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[BRUTE FORCE CHECK] {e}")
+
+
+def _record_failed_attempt(ip: str) -> None:
+    client = get_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        row = client.table("login_attempts").select("id, attempts").eq("ip_address", ip).execute()
+        if not row.data:
+            client.table("login_attempts").insert({
+                "ip_address": ip, "attempts": 1, "last_attempt": now,
+            }).execute()
+        else:
+            new_attempts = row.data[0]["attempts"] + 1
+            update: dict = {"attempts": new_attempts, "last_attempt": now}
+            if new_attempts >= _MAX_ATTEMPTS:
+                update["blocked_until"] = (
+                    datetime.now(timezone.utc) + timedelta(minutes=_BLOCK_MINUTES)
+                ).isoformat()
+            client.table("login_attempts").update(update).eq("ip_address", ip).execute()
+    except Exception as e:
+        logger.warning(f"[BRUTE FORCE RECORD] {e}")
+
+
+def _clear_attempts(ip: str) -> None:
+    try:
+        get_supabase().table("login_attempts").delete().eq("ip_address", ip).execute()
+    except Exception as e:
+        logger.warning(f"[BRUTE FORCE CLEAR] {e}")
 
 
 # ── POST /auth/register ───────────────────────────────────────────────────────
@@ -119,6 +187,9 @@ def verify_email(token: str):
 @router.post("/login")
 @limiter.limit("10/minute")
 def login(request: Request, user: UserLogin):
+    ip = _get_client_ip(request)
+    _check_brute_force(ip)
+
     try:
         result = supabase.auth.sign_in_with_password({
             "email": user.email,
@@ -137,15 +208,49 @@ def login(request: Request, user: UserLogin):
                 detail="Παρακαλώ επιβεβαιώστε το email σας πρώτα.",
             )
 
+        _clear_attempts(ip)
+
         return {
-            "access_token": result.session.access_token,
-            "user_id": result.user.id,
-            "email": result.user.email,
+            "access_token":  result.session.access_token,
+            "refresh_token": result.session.refresh_token,
+            "user_id":       result.user.id,
+            "email":         result.user.email,
         }
     except HTTPException:
         raise
     except Exception:
+        _record_failed_attempt(ip)
         raise HTTPException(status_code=401, detail="Λάθος email ή password")
+
+
+# ── POST /auth/refresh ────────────────────────────────────────────────────────
+
+@router.post("/refresh")
+@limiter.limit("30/minute")
+def refresh_token(request: Request, payload: RefreshRequest):
+    try:
+        result = supabase.auth.refresh_session(payload.refresh_token)
+        if not result.session:
+            raise HTTPException(status_code=401, detail="Μη έγκυρο refresh token.")
+        return {
+            "access_token":  result.session.access_token,
+            "refresh_token": result.session.refresh_token,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Μη έγκυρο refresh token.")
+
+
+# ── POST /auth/logout ─────────────────────────────────────────────────────────
+
+@router.post("/logout")
+def logout():
+    try:
+        supabase.auth.sign_out()
+    except Exception:
+        pass
+    return {"message": "Αποσύνδεση επιτυχής."}
 
 
 # ── POST /auth/resend-verification ───────────────────────────────────────────
