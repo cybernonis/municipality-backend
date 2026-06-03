@@ -4,10 +4,11 @@ import uuid
 from typing import Optional
 
 import anthropic
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 
 from app.config import ANTHROPIC_API_KEY
 from app.database import supabase
+from app.dependencies import require_permission
 from app.services.ai_service import classify_image, CATEGORIES
 from app.services.storage_service import upload_image
 from app.utils.sanitize import sanitize_text
@@ -164,7 +165,7 @@ async def update_report(report_id: str, update: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.patch("/{report_id}/auto-assign")
-async def auto_assign_report(report_id: str):
+async def auto_assign_report(report_id: str, _user: dict = Depends(require_permission("reports:assign"))):
     def _get_client():
         return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -246,7 +247,7 @@ async def auto_assign_report(report_id: str):
 
 
 @router.delete("/{report_id}")
-def delete_report(report_id: str):
+def delete_report(report_id: str, _user: dict = Depends(require_permission("reports:delete"))):
     try:
         supabase.table("reports")\
             .delete()\

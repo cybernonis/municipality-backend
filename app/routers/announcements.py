@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 
 from app.database import supabase
-from app.dependencies import require_admin
+from app.dependencies import require_admin, require_permission
 from app.services.storage_service import upload_image
 from app.utils.sanitize import sanitize_text
 
@@ -66,7 +66,7 @@ async def create_announcement(
     expires_at: Optional[str] = Form(None),
     admin_id: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
-    _admin: dict = Depends(require_admin),
+    _user: dict = Depends(require_permission("announcements:publish")),
 ):
     try:
         image_url = await _try_upload(image)
@@ -200,7 +200,7 @@ async def update_announcement(
 
 
 @router.delete("/{announcement_id}")
-def delete_announcement(announcement_id: str, _admin: dict = Depends(require_admin)):
+def delete_announcement(announcement_id: str, _user: dict = Depends(require_permission("announcements:delete"))):
     try:
         supabase.table("announcements").delete().eq("id", announcement_id).execute()
         return {"message": "Deleted successfully"}

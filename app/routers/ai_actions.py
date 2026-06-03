@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.database import get_supabase
-from app.dependencies import require_admin
+from app.dependencies import require_admin, require_permission
 from app.services.ai_actions import parse_admin_intent, execute_action, ACTIONS_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ async def parse_intent(req: IntentRequest, _admin: dict = Depends(require_admin)
 
 
 @router.post("/execute")
-async def execute_intent(req: ExecuteRequest, _admin: dict = Depends(require_admin)):
+async def execute_intent(req: ExecuteRequest, _user: dict = Depends(require_permission("ai_actions:execute"))):
     """Step 2 — Execute confirmed intent"""
     start  = time.time()
     client = get_supabase()

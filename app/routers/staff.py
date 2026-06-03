@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from app.database import supabase
+from app.dependencies import require_permission
 from pydantic import BaseModel
 from typing import Optional
 import logging
@@ -112,7 +113,7 @@ def update_staff(staff_id: str, update: StaffUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{staff_id}")
-def delete_staff(staff_id: str):
+def delete_staff(staff_id: str, _user: dict = Depends(require_permission("users:delete"))):
     try:
         # Διαγραφή από Auth
         supabase.auth.admin.delete_user(staff_id)
