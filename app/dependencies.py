@@ -18,7 +18,6 @@ async def get_current_user(
         if not user_resp or not user_resp.user:
             raise HTTPException(status_code=401, detail="Μη έγκυρο token.")
         uid = user_resp.user.id
-        logger.warning(f"[AUTH DEBUG] get_user OK — uid={uid}")
         profile = (
             client.table("users")
             .select("id, full_name, role, email_verified")
@@ -26,7 +25,6 @@ async def get_current_user(
             .single()
             .execute()
         )
-        logger.warning(f"[AUTH DEBUG] profile.data={profile.data}")
         if not profile.data:
             raise HTTPException(status_code=401, detail="Χρήστης δεν βρέθηκε.")
         return profile.data
@@ -38,7 +36,6 @@ async def get_current_user(
 
 
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    logger.warning(f"[AUTH DEBUG] require_admin — user_id={user.get('id')} role={user.get('role')!r}")
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Απαιτούνται δικαιώματα διαχειριστή.")
     return user
