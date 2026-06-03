@@ -1,8 +1,10 @@
-import logging
-import os
 import json
+import logging
+
 import firebase_admin
 from firebase_admin import credentials, messaging
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ def _init_firebase():
     if _firebase_initialized:
         return True
     try:
-        service_account = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
+        service_account = settings.firebase_service_account
         if not service_account:
             logger.warning("FIREBASE_SERVICE_ACCOUNT not set")
             return False

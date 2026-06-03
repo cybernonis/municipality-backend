@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from app.database import supabase
 from app.dependencies import require_admin
 from app.services.storage_service import upload_image
+from app.utils.sanitize import sanitize_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -69,7 +70,8 @@ async def create_announcement(
 ):
     try:
         image_url = await _try_upload(image)
-        actual_content = content or body or ""
+        title = sanitize_text(title)
+        actual_content = sanitize_text(content or body or "")
         announcement_id = str(uuid.uuid4())
 
         row = {
@@ -167,10 +169,10 @@ async def update_announcement(
     try:
         data: dict = {}
         if title is not None:
-            data["title"] = title
+            data["title"] = sanitize_text(title)
         actual_content = content or body
         if actual_content is not None:
-            data["body"] = actual_content
+            data["body"] = sanitize_text(actual_content)
         if category is not None:
             data["category"] = category
         if is_important is not None:

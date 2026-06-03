@@ -1,5 +1,4 @@
 import logging
-import os
 import secrets
 from datetime import datetime, timezone, timedelta
 
@@ -7,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from app.config import settings
 from app.database import supabase, get_supabase
 from app.limiter import limiter
 from app.models.schemas import UserRegister, UserLogin
@@ -15,7 +15,7 @@ from app.services.email_service import send_email
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-BACKEND_URL = os.getenv("BACKEND_URL", "https://municipality-backend-production.up.railway.app")
+BACKEND_URL = settings.backend_url
 _MAX_ATTEMPTS = 5
 _BLOCK_MINUTES = 15
 

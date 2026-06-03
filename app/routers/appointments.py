@@ -1,12 +1,13 @@
 import logging
 import uuid
+from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
+from pydantic import BaseModel, field_validator
 
 from app.database import supabase
+from app.utils.sanitize import sanitize_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -20,6 +21,11 @@ class AppointmentCreate(BaseModel):
     scheduled_at: datetime
     reason: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator("reason", "notes", mode="before")
+    @classmethod
+    def sanitize_fields(cls, v: Optional[str]) -> Optional[str]:
+        return sanitize_text(v) if v else v
 
 
 @router.post("/")

@@ -1,13 +1,16 @@
+import asyncio
+import logging
+import uuid
+from typing import Optional
+
 import anthropic
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from typing import Optional
+
 from app.config import ANTHROPIC_API_KEY
 from app.database import supabase
 from app.services.ai_service import classify_image, CATEGORIES
 from app.services.storage_service import upload_image
-import uuid
-import asyncio
-import logging
+from app.utils.sanitize import sanitize_text
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,11 @@ async def create_report(
     image: Optional[UploadFile] = File(None),
 ):
     try:
+        if description:
+            description = sanitize_text(description)
+        if address:
+            address = sanitize_text(address)
+
         image_url = ""
         ai_result = {"category": "other", "severity": "medium", "confidence": 0.0, "department": "technical_services"}
 

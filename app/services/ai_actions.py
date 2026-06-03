@@ -4,7 +4,6 @@ AI Admin Actions Service
 """
 import json
 import logging
-import os
 import re
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -413,7 +412,8 @@ ACTIONS_REGISTRY: dict[str, dict] = {
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    from app.config import settings
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -1,21 +1,19 @@
 import httpx
 import logging
-import os
 from datetime import datetime
+
+from app.config import settings
+from app.utils.sanitize import mask_email
 
 logger = logging.getLogger(__name__)
 
-BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
-SENDER_EMAIL = os.getenv("SMTP_USER", "noreply@municipality.gr")
 SENDER_NAME = "Δήμος Ηρακλείου"
-
 BREVO_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 async def send_email(to: str, subject: str, html: str):
-    print(f"SEND_EMAIL called: to={to} subject={subject[:30]}", flush=True)
-    if not BREVO_API_KEY:
+    logger.debug(f"send_email: to={mask_email(to)} subject={subject[:30]}")
+    if not settings.brevo_api_key:
         logger.warning("BREVO_API_KEY not set — skipping email")
         return False
     if not to:
@@ -24,7 +22,7 @@ async def send_email(to: str, subject: str, html: str):
 
     try:
         payload = {
-            "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+            "sender": {"name": SENDER_NAME, "email": settings.smtp_user},
             "to": [{"email": to}],
             "subject": subject,
             "htmlContent": html,
@@ -32,28 +30,21 @@ async def send_email(to: str, subject: str, html: str):
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
-            "api-key": BREVO_API_KEY,
+            "api-key": settings.brevo_api_key,
         }
 
-        print("CALLING BREVO API...", flush=True)  # ← ΠΡΟΣΘΕΣΕ
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(BREVO_URL, json=payload, headers=headers)
 
-        print(f"BREVO RESPONSE: {resp.status_code} {resp.text[:200]}", flush=True)
-
         if resp.status_code in (200, 201):
-            print(f"Email sent to {to}", flush=True)
+            logger.info(f"Email sent to {mask_email(to)}")
             return True
         else:
-            print(f"Brevo error {resp.status_code}: {resp.text}", flush=True)
+            logger.error(f"Brevo error {resp.status_code} for {mask_email(to)}")
             return False
 
     except Exception as e:
-        print(f"EMAIL EXCEPTION: {type(e).__name__}: {e}", flush=True)
-        return False
-
-    except Exception as e:
-        logger.error(f"Email error: {e}")
+        logger.error(f"Email exception for {mask_email(to)}: {type(e).__name__}")
         return False
 
 
@@ -80,7 +71,7 @@ async def send_sla_breach_email(report_id: str, category: str, hours_overdue: fl
       </div>
     </div>
     """
-    await send_email(ADMIN_EMAIL, subject, html)
+    await send_email(settings.admin_email, subject, html)
 
 
 # ─────────────────────────────────────────────
@@ -106,7 +97,7 @@ async def send_crisis_email(crisis_type: str, location: str, description: str):
       </div>
     </div>
     """
-    await send_email(ADMIN_EMAIL, subject, html)
+    await send_email(settings.admin_email, subject, html)
 
 
 # ─────────────────────────────────────────────
@@ -133,7 +124,7 @@ async def send_high_severity_email(report_id: str, category: str, description: s
       </div>
     </div>
     """
-    await send_email(ADMIN_EMAIL, subject, html)
+    await send_email(settings.admin_email, subject, html)
 
 
 # ─────────────────────────────────────────────
@@ -160,4 +151,4 @@ async def send_external_alert_email(alert_type: str, message: str):
       </div>
     </div>
     """
-    await send_email(ADMIN_EMAIL, subject, html)
+    await send_email(settings.admin_email, subject, html)

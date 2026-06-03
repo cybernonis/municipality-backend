@@ -1,11 +1,12 @@
 import asyncio
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -198,7 +199,7 @@ async def _get_traffic_data(api_key: str) -> dict:
 
 @router.get("/live")
 async def get_traffic_live():
-    api_key = os.getenv("HERE_API_KEY")
+    api_key = settings.here_api_key
     if not api_key:
         raise HTTPException(
             status_code=503,

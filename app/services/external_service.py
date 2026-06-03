@@ -1,18 +1,19 @@
 import httpx
 import asyncio
 import logging
-import os
 from datetime import datetime, timezone, timedelta
 from math import radians, cos, sin, asin, sqrt
 from typing import Optional
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 HERAKLION_LAT = 35.3387
 HERAKLION_LON = 25.1442
 
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
-TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY", "")
+OPENWEATHER_API_KEY = settings.openweather_api_key
+TOMTOM_API_KEY = settings.tomtom_api_key
 
 # In-memory cache: {key: {"data": ..., "expires_at": datetime}}
 _cache: dict = {}

@@ -5,12 +5,14 @@ from typing import List
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.responses import Response
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
+from app.config import settings
 from app.limiter import limiter
 from app.routers import departments, auth, reports, ai, participation, performance, payments
 from app.routers import crisis, sla, predictive, iot, digital_twin
@@ -25,6 +27,7 @@ from app.routers import ai_actions
 from app.services.sla_service import check_sla_violations
 from app.routers import staff
 
+logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +48,9 @@ app = FastAPI(
     description="Smart Municipality Issue Reporting System — Ηράκλειο",
     version="1.0.0",
 )
+
+if settings.environment == "production":
+    app.add_middleware(HTTPSRedirectMiddleware)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
