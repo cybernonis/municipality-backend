@@ -4,11 +4,12 @@ import logging
 import secrets
 from datetime import datetime, timezone, timedelta
 
+import httpx
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
-from supabase import create_client
 
 from app.config import settings
 from app.database import supabase, get_supabase
@@ -130,14 +131,29 @@ def _parse_device_label(user_agent: str) -> str:
     return "Unknown Device"
 
 
-def _make_user_client(access_token: str):
-    """Per-request Supabase client scoped to the user's session (for MFA calls)."""
-    try:
-        client = create_client(settings.supabase_url, settings.supabase_service_key)
-        client.auth.set_session(access_token, "")
-        return client
-    except Exception:
-        raise HTTPException(status_code=401, detail="Μη έγκυρο token.")
+async def _gotrue(
+    method: str,
+    path: str,
+    user_token: str,
+    body: dict | None = None,
+) -> dict:
+    """Call the GoTrue REST API directly with the caller's access token."""
+    base = f"{settings.supabase_url}/auth/v1"
+    headers = {
+        "apikey": settings.supabase_anon_key,
+        "Authorization": f"Bearer {user_token}",
+        "Content-Type": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=15) as http:
+        fn = getattr(http, method)
+        resp = await fn(f"{base}{path}", headers=headers, json=body)
+    if not resp.is_success:
+        try:
+            detail = resp.json().get("message", resp.text)
+        except Exception:
+            detail = resp.text
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+    return resp.json() if resp.content else {}
 
 
 # ── B. Brute-force / account lockout ─────────────────────────────────────────
@@ -430,24 +446,17 @@ async def mfa_setup(
 ):
     """Enroll a TOTP factor. Returns the otpauth URI + base32 secret for QR rendering.
     Factor is NOT active until /mfa/verify completes the challenge."""
-    user_client = _make_user_client(credentials.credentials)
-    try:
-        resp = user_client.auth.mfa.enroll({
-            "factor_type": "totp",
-            "friendly_name": req.friendly_name,
-        })
-        totp = resp.totp
-        return {
-            "factor_id": resp.id,
-            "totp_uri":  totp.uri,
-            "secret":    totp.secret,
-            "qr_code":   totp.qr_code,   # SVG data URI — render directly in <img src>
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[MFA SETUP] {e}")
-        raise HTTPException(status_code=400, detail=f"Σφάλμα ρύθμισης MFA: {e}")
+    data = await _gotrue("post", "/factors", credentials.credentials, {
+        "factor_type": "totp",
+        "friendly_name": req.friendly_name,
+    })
+    totp = data.get("totp") or {}
+    return {
+        "factor_id": data.get("id"),
+        "totp_uri":  totp.get("uri"),
+        "secret":    totp.get("secret"),
+        "qr_code":   totp.get("qr_code"),
+    }
 
 
 @router.post("/mfa/verify")
@@ -457,31 +466,26 @@ async def mfa_verify(
 ):
     """Complete TOTP enrollment: create challenge → verify code → activate factor.
     Returns 10 single-use recovery codes (plaintext, shown once only)."""
-    user_client = _make_user_client(credentials.credentials)
-    try:
-        challenge    = user_client.auth.mfa.challenge({"factor_id": req.factor_id})
-        verify_resp  = user_client.auth.mfa.verify({
-            "factor_id":    req.factor_id,
-            "challenge_id": challenge.id,
-            "code":         req.code,
-        })
+    token = credentials.credentials
+    challenge    = await _gotrue("post", f"/factors/{req.factor_id}/challenge", token)
+    verify_data  = await _gotrue("post", f"/factors/{req.factor_id}/verify", token, {
+        "challenge_id": challenge["id"],
+        "code":         req.code,
+    })
 
-        user_resp      = user_client.auth.get_user()
-        user_id        = user_resp.user.id
-        recovery_codes = _generate_recovery_codes(user_id)
-        new_session    = verify_resp.session
+    # GoTrue /verify response: {access_token, refresh_token, user, ...}
+    user_id = (verify_data.get("user") or {}).get("id")
+    if not user_id:
+        user_id = get_supabase().auth.get_user(token).user.id
 
-        return {
-            "message":        "MFA ενεργοποιήθηκε επιτυχώς!",
-            "recovery_codes": recovery_codes,
-            "access_token":   new_session.access_token  if new_session else None,
-            "refresh_token":  new_session.refresh_token if new_session else None,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.warning(f"[MFA VERIFY] {e}")
-        raise HTTPException(status_code=400, detail="Μη έγκυρος κωδικός TOTP.")
+    recovery_codes = _generate_recovery_codes(user_id)
+
+    return {
+        "message":        "MFA ενεργοποιήθηκε επιτυχώς!",
+        "recovery_codes": recovery_codes,
+        "access_token":   verify_data.get("access_token"),
+        "refresh_token":  verify_data.get("refresh_token"),
+    }
 
 
 @router.post("/mfa/disable")
@@ -490,52 +494,40 @@ async def mfa_disable(
     credentials: HTTPAuthorizationCredentials = Security(_auth_bearer),
 ):
     """Verify a live TOTP code then unenroll the factor and delete recovery codes."""
-    user_client = _make_user_client(credentials.credentials)
-    try:
-        challenge = user_client.auth.mfa.challenge({"factor_id": req.factor_id})
-        user_client.auth.mfa.verify({
-            "factor_id":    req.factor_id,
-            "challenge_id": challenge.id,
-            "code":         req.code,
-        })
-        user_client.auth.mfa.unenroll({"factor_id": req.factor_id})
+    token = credentials.credentials
+    challenge = await _gotrue("post", f"/factors/{req.factor_id}/challenge", token)
+    await _gotrue("post", f"/factors/{req.factor_id}/verify", token, {
+        "challenge_id": challenge["id"],
+        "code":         req.code,
+    })
+    await _gotrue("delete", f"/factors/{req.factor_id}", token)
 
-        uid = user_client.auth.get_user().user.id
-        get_supabase().table("mfa_recovery_codes").delete().eq("user_id", uid).execute()
+    uid = get_supabase().auth.get_user(token).user.id
+    get_supabase().table("mfa_recovery_codes").delete().eq("user_id", uid).execute()
 
-        return {"message": "MFA απενεργοποιήθηκε."}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.warning(f"[MFA DISABLE] {e}")
-        raise HTTPException(status_code=400, detail="Σφάλμα απενεργοποίησης MFA. Ελέγξτε τον κωδικό TOTP.")
+    return {"message": "MFA απενεργοποιήθηκε."}
 
 
 @router.get("/mfa/status")
 async def mfa_status(credentials: HTTPAuthorizationCredentials = Security(_auth_bearer)):
     """Return enrolled TOTP factors and whether MFA is currently active."""
-    user_client = _make_user_client(credentials.credentials)
-    try:
-        factors   = user_client.auth.mfa.list_factors()
-        totp_list = getattr(factors, "totp", []) or []
-        enabled   = any(getattr(f, "status", "") == "verified" for f in totp_list)
-        return {
-            "enabled": enabled,
-            "factors": [
-                {
-                    "id":            f.id,
-                    "status":        getattr(f, "status", ""),
-                    "friendly_name": getattr(f, "friendly_name", ""),
-                    "factor_type":   getattr(f, "factor_type", "totp"),
-                }
-                for f in totp_list
-            ],
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.warning(f"[MFA STATUS] {e}")
-        raise HTTPException(status_code=400, detail="Σφάλμα ανάκτησης κατάστασης MFA.")
+    data = await _gotrue("get", "/factors", credentials.credentials)
+    # GoTrue returns a list of factor objects
+    factors   = data if isinstance(data, list) else (data.get("totp") or [])
+    totp_list = [f for f in factors if f.get("factor_type") == "totp"]
+    enabled   = any(f.get("status") == "verified" for f in totp_list)
+    return {
+        "enabled": enabled,
+        "factors": [
+            {
+                "id":            f.get("id"),
+                "status":        f.get("status", ""),
+                "friendly_name": f.get("friendly_name", ""),
+                "factor_type":   f.get("factor_type", "totp"),
+            }
+            for f in totp_list
+        ],
+    }
 
 
 # ── C. Recovery code bypass ───────────────────────────────────────────────────
