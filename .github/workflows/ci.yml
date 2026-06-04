@@ -31,3 +31,24 @@ jobs:
 
       - name: Smoke tests (production)
         run: pytest tests/test_smoke.py -v
+
+  # ── Dependency vulnerability scan ──────────────────────────────────────────
+  # continue-on-error: true keeps this non-blocking until all deps are clean.
+  # TODO: set continue-on-error: false once pip-audit reports zero findings.
+  security-scan:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit dependencies
+        run: pip-audit -r requirements.txt

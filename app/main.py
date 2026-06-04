@@ -3,6 +3,9 @@ import json
 import logging
 from typing import List
 
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -31,6 +34,56 @@ from app.routers import admin
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 logger = logging.getLogger(__name__)
 
+
+# ── Sentry — initialize BEFORE app = FastAPI() ────────────────────────────────
+
+_SENSITIVE_KEYS = frozenset({
+    "password", "token", "access_token", "refresh_token",
+    "secret", "apikey", "api_key", "authorization", "cookie",
+})
+
+
+def _scrub_dict(d: dict) -> dict:
+    out = {}
+    for k, v in d.items():
+        if k.lower() in _SENSITIVE_KEYS:
+            out[k] = "[Filtered]"
+        elif isinstance(v, dict):
+            out[k] = _scrub_dict(v)
+        else:
+            out[k] = v
+    return out
+
+
+def _before_send(event: dict, hint: dict) -> dict:
+    req = event.get("request", {})
+    if isinstance(req.get("headers"), dict):
+        req["headers"] = _scrub_dict(req["headers"])
+    if isinstance(req.get("cookies"), dict):
+        req["cookies"] = {k: "[Filtered]" for k in req["cookies"]}
+    if isinstance(req.get("data"), dict):
+        req["data"] = _scrub_dict(req["data"])
+    for section in ("extra", "contexts"):
+        if isinstance(event.get(section), dict):
+            event[section] = _scrub_dict(event[section])
+    return event
+
+
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        integrations=[StarletteIntegration(), FastApiIntegration()],
+        traces_sample_rate=0.1,
+        send_default_pii=False,
+        before_send=_before_send,
+        environment=settings.environment,
+    )
+    logger.info("[SENTRY] Initialized (environment=%s)", settings.environment)
+else:
+    logger.debug("[SENTRY] DSN not set — error tracking disabled")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:

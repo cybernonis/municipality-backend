@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "production"
     rate_limit_global: str = "300/minute"  # DoS backstop; override via RATE_LIMIT_GLOBAL env var
+    sentry_dsn: str = ""                   # Leave empty to disable Sentry entirely
 
     class Config:
         env_file = ".env"
