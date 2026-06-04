@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from typing import List
 
 import sentry_sdk
@@ -110,16 +111,27 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
+_DEFAULT_ORIGINS = [
+    "https://municipality-dashboard-alpha.vercel.app",
+    "https://municipality-dashboard.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8080",
+]
+_ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", ",".join(_DEFAULT_ORIGINS)).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://municipality-dashboard-alpha.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 app.include_router(auth.router,          prefix="/auth",          tags=["Auth"])
