@@ -247,13 +247,21 @@ async def start_external_monitoring():
         fetch_weather, fetch_traffic, fetch_hazards,
         fetch_air_quality, fetch_earthquakes,
     )
+    from app.services.external_data import (
+        get_marine_data, get_pollen_data, get_uv_solar_data,
+    )
 
-    # Individual loops with their own refresh cadences
+    # v1 loops
     asyncio.create_task(_monitor_loop(fetch_weather,     600,  "weather"))      # 10 min
     asyncio.create_task(_monitor_loop(fetch_traffic,     120,  "traffic"))      # 2 min
     asyncio.create_task(_monitor_loop(fetch_hazards,     900,  "hazards"))      # 15 min
     asyncio.create_task(_monitor_loop(fetch_air_quality, 1800, "air_quality"))  # 30 min
     asyncio.create_task(_monitor_loop(fetch_earthquakes, 1800, "earthquakes"))  # 30 min
+
+    # v2 loops (beaches & ships refresh via cache TTL; marine/pollen/uv need active refresh)
+    asyncio.create_task(_monitor_loop(get_marine_data,  1800, "marine"))        # 30 min
+    asyncio.create_task(_monitor_loop(get_pollen_data,  3600, "pollen"))        # 1 h
+    asyncio.create_task(_monitor_loop(get_uv_solar_data, 1800, "uv_solar"))     # 30 min
 
 
 @app.on_event("shutdown")
