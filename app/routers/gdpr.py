@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel
 from typing import Optional
 
-from app.database import supabase
+from app.database import get_auth_client, supabase
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,7 +17,7 @@ def _require_self(authorization: Optional[str], user_id: str) -> str:
         raise HTTPException(status_code=401, detail="Authorization header απαιτείται.")
     token = authorization.removeprefix("Bearer ").strip()
     try:
-        resp = supabase.auth.get_user(token)
+        resp = get_auth_client().auth.get_user(token)
         if not resp or not resp.user:
             raise HTTPException(status_code=401, detail="Μη έγκυρο token.")
         if resp.user.id != user_id:

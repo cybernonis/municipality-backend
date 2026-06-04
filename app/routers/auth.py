@@ -12,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from app.config import settings
-from app.database import supabase, get_supabase
+from app.database import supabase, get_supabase, get_auth_client
 from app.dependencies import get_current_user
 from app.limiter import limiter
 from app.models.schemas import UserRegister, UserLogin
@@ -267,7 +267,7 @@ async def _record_login_session(user_id: str, ip: str, user_agent: str, email: s
 @limiter.limit("5/minute")
 async def register(request: Request, user: UserRegister):
     try:
-        result = supabase.auth.sign_up({"email": user.email, "password": user.password})
+        result = get_auth_client().auth.sign_up({"email": user.email, "password": user.password})
 
         if result.user:
             uid = result.user.id
@@ -324,8 +324,10 @@ async def login(request: Request, user: UserLogin):
     # B — lockout check (email-based)
     _check_lockout(user.email)
 
+    # Fresh anon client — session state is isolated here, never touches the service-role client
+    auth_client = get_auth_client()
     try:
-        result = supabase.auth.sign_in_with_password({"email": user.email, "password": user.password})
+        result = auth_client.auth.sign_in_with_password({"email": user.email, "password": user.password})
     except Exception:
         _record_attempt(user.email, ip, False)
         raise HTTPException(status_code=401, detail="Λάθος email ή password")
@@ -340,23 +342,23 @@ async def login(request: Request, user: UserLogin):
         email=result.user.email,
     )
 
-    # Email verification gate
+    # Email verification gate (DB query via service-role client — untouched by auth session)
     user_row = supabase.table("users").select("id, email_verified, role").eq("id", result.user.id).execute()
     if user_row.data and not user_row.data[0].get("email_verified", False):
         raise HTTPException(status_code=403, detail="Παρακαλώ επιβεβαιώστε το email σας πρώτα.")
 
     user_profile = user_row.data[0] if user_row.data else {}
 
-    # A — MFA enforcement for admins
+    # A — MFA enforcement for admins (use same auth_client that holds the user session)
     if user_profile.get("role") == "admin":
         try:
-            aal = supabase.auth.mfa.get_authenticator_assurance_level()
+            aal = auth_client.auth.mfa.get_authenticator_assurance_level()
             current_level = getattr(aal, "current_level", "aal1")
             next_level    = getattr(aal, "next_level",    "aal1")
 
             if next_level == "aal2" and current_level == "aal1":
                 # Factor enrolled but TOTP challenge not yet completed
-                factors   = supabase.auth.mfa.list_factors()
+                factors   = auth_client.auth.mfa.list_factors()
                 totp_list = getattr(factors, "totp", []) or []
                 verified  = [f for f in totp_list if getattr(f, "status", "") == "verified"]
                 return {
@@ -368,7 +370,7 @@ async def login(request: Request, user: UserLogin):
 
             if next_level == "aal1":
                 # No verified factor at all — soft-enforce setup
-                factors   = supabase.auth.mfa.list_factors()
+                factors   = auth_client.auth.mfa.list_factors()
                 totp_list = getattr(factors, "totp", []) or []
                 if not any(getattr(f, "status", "") == "verified" for f in totp_list):
                     return {
@@ -393,7 +395,7 @@ async def login(request: Request, user: UserLogin):
 @limiter.limit("30/minute")
 def refresh_token(request: Request, payload: RefreshRequest):
     try:
-        result = supabase.auth.refresh_session(payload.refresh_token)
+        result = get_auth_client().auth.refresh_session(payload.refresh_token)
         if not result.session:
             raise HTTPException(status_code=401, detail="Μη έγκυρο refresh token.")
         return {"access_token": result.session.access_token, "refresh_token": result.session.refresh_token}
@@ -406,7 +408,7 @@ def refresh_token(request: Request, payload: RefreshRequest):
 @router.post("/logout")
 def logout():
     try:
-        supabase.auth.sign_out()
+        get_auth_client().auth.sign_out()
     except Exception:
         pass
     return {"message": "Αποσύνδεση επιτυχής."}
@@ -484,7 +486,7 @@ async def mfa_verify(
     # GoTrue /verify response: {access_token, refresh_token, user, ...}
     user_id = (verify_data.get("user") or {}).get("id")
     if not user_id:
-        user_id = get_supabase().auth.get_user(token).user.id
+        user_id = get_auth_client().auth.get_user(token).user.id
 
     recovery_codes = _generate_recovery_codes(user_id)
 
@@ -510,7 +512,7 @@ async def mfa_disable(
     })
     await _gotrue("delete", f"/factors/{req.factor_id}", token)
 
-    uid = get_supabase().auth.get_user(token).user.id
+    uid = get_auth_client().auth.get_user(token).user.id
     get_supabase().table("mfa_recovery_codes").delete().eq("user_id", uid).execute()
 
     return {"message": "MFA απενεργοποιήθηκε."}

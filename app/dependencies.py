@@ -2,7 +2,7 @@ import logging
 from fastapi import Depends, HTTPException, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.database import get_supabase
+from app.database import get_auth_client, get_supabase
 from app.services.rbac import has_permission
 
 logger = logging.getLogger(__name__)
@@ -36,14 +36,13 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(_bearer),
 ) -> dict:
     token = credentials.credentials
-    client = get_supabase()
     try:
-        user_resp = client.auth.get_user(token)
+        user_resp = get_auth_client().auth.get_user(token)  # fresh anon client — no session pollution
         if not user_resp or not user_resp.user:
             raise HTTPException(status_code=401, detail="Μη έγκυρο token.")
         uid = user_resp.user.id
         profile = (
-            client.table("users")
+            get_supabase().table("users")
             .select("id, full_name, role, email_verified")
             .eq("id", uid)
             .single()
