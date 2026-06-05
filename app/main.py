@@ -23,6 +23,7 @@ from app.routers import crisis, sla, predictive, iot, digital_twin
 from app.routers import external
 from app.routers import announcements, appointments, smart_tips
 from app.routers import gamification, carbon
+from app.routers import crews
 from app.routers import gdpr
 from app.routers import places
 from app.routers import traffic
@@ -153,6 +154,7 @@ app.include_router(appointments.router,   prefix="/appointments",   tags=["Appoi
 app.include_router(smart_tips.router,     prefix="/smart-tips",     tags=["Smart Tips"])
 app.include_router(gamification.router,   prefix="/gamification",   tags=["Gamification"])
 app.include_router(carbon.router,         prefix="/carbon",         tags=["Carbon"])
+app.include_router(crews.router)
 app.include_router(gdpr.router,           prefix="/gdpr",           tags=["GDPR"])
 app.include_router(places.router,         prefix="/places",         tags=["Places"])
 app.include_router(traffic.router,        prefix="/traffic",        tags=["Traffic"])
