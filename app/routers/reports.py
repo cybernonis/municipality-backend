@@ -21,7 +21,7 @@ router = APIRouter()
 @router.get("/")
 def get_all_reports():
     result = supabase.table("reports")\
-        .select("*, departments(name)")\
+        .select("*, departments(id, name, slug), crews(id, name, specialty, leader_name)")\
         .order("created_at", desc=True)\
         .execute()
     return result.data
@@ -29,7 +29,7 @@ def get_all_reports():
 @router.get("/my")
 def get_my_reports(user_id: str):
     result = supabase.table("reports")\
-        .select("*, departments(name)")\
+        .select("*, departments(id, name), crews(id, name)")\
         .eq("user_id", user_id)\
         .order("created_at", desc=True)\
         .execute()
@@ -38,7 +38,7 @@ def get_my_reports(user_id: str):
 @router.get("/{report_id}")
 def get_report(report_id: str):
     result = supabase.table("reports")\
-        .select("*, departments(name), report_updates(*)")\
+        .select("*, departments(id, name, slug), crews(id, name, specialty, leader_name), report_updates(*)")\
         .eq("id", report_id)\
         .execute()
     if not result.data:
@@ -323,11 +323,16 @@ async def assign_to_crew(
     if not update_result.data:
         raise HTTPException(status_code=404, detail="Δεν βρέθηκε αναφορά")
 
+    full_report = supabase.table("reports").select(
+        "*, departments(id, name, slug), crews(id, name, specialty, leader_name)"
+    ).eq("id", report_id).execute()
+
     return {
         "success": True,
         "crew_id": crew_id,
         "crew_name": crew_data["name"],
         "report_id": report_id,
+        "report": full_report.data[0] if full_report.data else None,
     }
 
 
