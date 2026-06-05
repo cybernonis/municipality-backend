@@ -4,7 +4,7 @@ import uuid
 from typing import Optional
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, UploadFile, File, Form
 
 from app.config import ANTHROPIC_API_KEY
 from app.database import supabase
@@ -247,6 +247,46 @@ async def auto_assign_report(report_id: str, _user: dict = Depends(require_permi
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/{report_id}/assign-worker")
+@limiter.limit("60/minute")
+async def assign_to_worker(
+    request: Request,
+    report_id: str,
+    worker_id: str = Body(..., embed=True),
+    _user: dict = Depends(require_permission("reports:assign")),
+):
+    """Admin χειροκίνητη ανάθεση αναφοράς σε συγκεκριμένο υπάλληλο."""
+    worker = supabase.table("users").select("id, full_name, role").eq(
+        "id", worker_id
+    ).maybe_single().execute()
+
+    if not worker.data:
+        raise HTTPException(status_code=404, detail="Ο υπάλληλος δεν βρέθηκε")
+    if worker.data.get("role") == "citizen":
+        raise HTTPException(status_code=400, detail="Ο χρήστης δεν είναι υπάλληλος")
+
+    result = supabase.table("reports").update({
+        "assigned_to": worker_id,
+        "status": "in_progress",
+    }).eq("id", report_id).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Αναφορά δεν βρέθηκε")
+
+    supabase.table("report_updates").insert({
+        "report_id": report_id,
+        "status": "in_progress",
+        "comment": f"Χειροκίνητη ανάθεση → {worker.data.get('full_name', worker_id)}",
+    }).execute()
+
+    return {
+        "success": True,
+        "report_id": report_id,
+        "assigned_to": worker_id,
+        "worker_name": worker.data.get("full_name"),
+    }
 
 
 @router.delete("/{report_id}")
