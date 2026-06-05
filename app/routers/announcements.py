@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import sys
+import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -71,40 +73,69 @@ async def create_announcement(
     image: Optional[UploadFile] = File(None),
     _user: dict = Depends(get_current_user),  # TEMP: bypass role check for diagnosis
 ):
-    _dbg_role = _user.get("role") if isinstance(_user, dict) else getattr(_user, "role", "NO_ATTR")
-    print("=" * 60)
-    print(f"[ANNOUNCE POST] _user type={type(_user)}")
-    print(f"[ANNOUNCE POST] _user keys={list(_user.keys()) if isinstance(_user, dict) else 'not a dict'}")
-    print(f"[ANNOUNCE POST] _user full={_user}")
-    print(f"[ANNOUNCE POST] role={_dbg_role!r}")
-    print("=" * 60)
+    # ═══ EXTENSIVE LOGGING ═══
+    print("=" * 60, flush=True)
+    print(f"[ANNOUNCE POST] Request received", flush=True)
+    print(f"[ANNOUNCE POST] title={title!r} category={category!r}", flush=True)
+    print(f"[ANNOUNCE POST] is_important={is_important} is_urgent={is_urgent}", flush=True)
+    if isinstance(_user, dict):
+        print(f"[ANNOUNCE POST] user keys={list(_user.keys())}", flush=True)
+        print(f"[ANNOUNCE POST] user role={_user.get('role')!r}", flush=True)
+        print(f"[ANNOUNCE POST] user id={_user.get('id')!r}", flush=True)
+        print(f"[ANNOUNCE POST] user email_verified={_user.get('email_verified')!r}", flush=True)
+    else:
+        print(f"[ANNOUNCE POST] user type={type(_user).__name__} attrs={dir(_user)}", flush=True)
+    print("=" * 60, flush=True)
+    sys.stdout.flush()
+
+    # ── Step 1: image upload ──
     try:
         image_url = await _try_upload(image)
-        title = sanitize_text(title)
-        actual_content = sanitize_text(content or body or "")
-        announcement_id = str(uuid.uuid4())
-
-        row = {
-            "id":           announcement_id,
-            "title":        title,
-            "body":         actual_content,
-            "category":     category or "general",
-            "is_important": is_important,
-            "is_urgent":    is_urgent,
-            "admin_id":     admin_id,
-            "image_url":    image_url,
-        }
-        if expires_at:
-            row["expires_at"] = expires_at
-
-        result = supabase.table("announcements").insert(row).execute()
-        print(f"[announcements] Created id={announcement_id} is_important={is_important} is_urgent={is_urgent}")
-
-        await _push_announcement(title, actual_content, announcement_id)
-
-        return {"message": "Ανακοίνωση δημιουργήθηκε!", "announcement": normalize_announcement(result.data[0])}
+        print(f"[ANNOUNCE POST] image_url={image_url!r}", flush=True)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[ANNOUNCE POST] image upload error (non-fatal): {e}", flush=True)
+        image_url = None
+
+    # ── Step 2: build row ──
+    title = sanitize_text(title)
+    actual_content = sanitize_text(content or body or "")
+    announcement_id = str(uuid.uuid4())
+
+    row = {
+        "id":           announcement_id,
+        "title":        title,
+        "body":         actual_content,
+        "category":     category or "general",
+        "is_important": is_important,
+        "is_urgent":    is_urgent,
+        "admin_id":     admin_id,
+        "image_url":    image_url,
+    }
+    if expires_at:
+        row["expires_at"] = expires_at
+
+    print(f"[ANNOUNCE POST] row to insert: {row}", flush=True)
+    sys.stdout.flush()
+
+    # ── Step 3: DB insert ──
+    try:
+        result = supabase.table("announcements").insert(row).execute()
+        print(f"[ANNOUNCE POST] insert result.data={result.data}", flush=True)
+        print(f"[ANNOUNCE POST] ✅ Created id={announcement_id}", flush=True)
+        sys.stdout.flush()
+    except Exception as db_err:
+        print(f"[ANNOUNCE POST] ❌ DB INSERT FAILED: {type(db_err).__name__}: {db_err}", flush=True)
+        traceback.print_exc()
+        sys.stdout.flush()
+        raise HTTPException(status_code=500, detail=f"DB error: {str(db_err)}")
+
+    if not result.data:
+        print(f"[ANNOUNCE POST] ❌ insert returned empty data", flush=True)
+        raise HTTPException(status_code=500, detail="Insert returned no data")
+
+    await _push_announcement(title, actual_content, announcement_id)
+
+    return {"message": "Ανακοίνωση δημιουργήθηκε!", "announcement": normalize_announcement(result.data[0])}
 
 
 # NOTE: /important MUST be declared before /{announcement_id} to avoid routing conflict
