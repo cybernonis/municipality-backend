@@ -289,6 +289,57 @@ async def assign_to_worker(
     }
 
 
+@router.patch("/{report_id}/assign-crew")
+async def assign_to_crew(
+    report_id: str,
+    payload: dict = Body(...),
+    _user: dict = Depends(get_current_user),
+):
+    """Ανάθεση αναφοράς σε συνεργείο (admin/manager only)"""
+    if _user.get("role") not in ["admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Δεν έχετε δικαίωμα")
+
+    crew_id = payload.get("crew_id")
+    if not crew_id:
+        raise HTTPException(status_code=400, detail="Απαιτείται crew_id")
+
+    crew = supabase.table("crews").select("id, department_id, name").eq("id", crew_id).execute()
+    if not crew.data:
+        raise HTTPException(status_code=404, detail="Δεν βρέθηκε συνεργείο")
+
+    crew_data = crew.data[0]
+
+    update_result = supabase.table("reports").update({
+        "crew_id": crew_id,
+        "department_id": crew_data["department_id"],
+        "status": "assigned",
+        "auto_assigned": False,
+    }).eq("id", report_id).execute()
+
+    if not update_result.data:
+        raise HTTPException(status_code=404, detail="Δεν βρέθηκε αναφορά")
+
+    try:
+        supabase.table("report_updates").insert({
+            "report_id": report_id,
+            "user_id": _user["id"],
+            "action": "assigned_to_crew",
+            "details": {
+                "crew_id": crew_id,
+                "crew_name": crew_data["name"],
+            },
+        }).execute()
+    except Exception as e:
+        print(f"[AUDIT] {e}")
+
+    return {
+        "success": True,
+        "crew_id": crew_id,
+        "crew_name": crew_data["name"],
+        "report_id": report_id,
+    }
+
+
 @router.delete("/{report_id}")
 def delete_report(report_id: str, _user: dict = Depends(require_permission("reports:delete"))):
     try:
