@@ -289,6 +289,43 @@ async def assign_to_worker(
     }
 
 
+@router.patch("/{report_id}/assign-crew")
+async def assign_to_crew(
+    report_id: str,
+    payload: dict = Body(...),
+):
+    """Ανάθεση αναφοράς σε συνεργείο"""
+    crew_id = payload.get("crew_id")
+    if not crew_id:
+        raise HTTPException(status_code=400, detail="Απαιτείται crew_id")
+
+    crew_result = supabase.table("crews").select(
+        "id, department_id, name"
+    ).eq("id", crew_id).execute()
+
+    if not crew_result.data:
+        raise HTTPException(status_code=404, detail="Δεν βρέθηκε συνεργείο")
+
+    crew_data = crew_result.data[0]
+
+    update_result = supabase.table("reports").update({
+        "crew_id": crew_id,
+        "department_id": crew_data["department_id"],
+        "status": "assigned",
+        "auto_assigned": False,
+    }).eq("id", report_id).execute()
+
+    if not update_result.data:
+        raise HTTPException(status_code=404, detail="Δεν βρέθηκε αναφορά")
+
+    return {
+        "success": True,
+        "crew_id": crew_id,
+        "crew_name": crew_data["name"],
+        "report_id": report_id,
+    }
+
+
 @router.delete("/{report_id}")
 def delete_report(report_id: str, _user: dict = Depends(require_permission("reports:delete"))):
     try:
