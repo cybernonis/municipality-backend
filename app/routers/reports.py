@@ -66,10 +66,15 @@ async def create_report(
         ai_result = {"category": "other", "severity": "medium", "confidence": 0.0, "department": "technical_services"}
 
         if image is not None:
-            image_url = await upload_image(image)
-            await image.seek(0)
-            image_bytes = await image.read()
-            ai_result = await classify_image(image_bytes, description)
+            try:
+                image_url = await upload_image(image)
+                await image.seek(0)
+                image_bytes = await image.read()
+                ai_result = await classify_image(image_bytes, description)
+                if ai_result.get("fallback_reason"):
+                    logger.warning(f"[REPORTS] AI fallback: {ai_result['fallback_reason']}")
+            except Exception as ai_err:
+                logger.warning(f"[REPORTS] AI/upload failed, using defaults: {ai_err}")
 
         dept = supabase.table("departments")\
             .select("id")\

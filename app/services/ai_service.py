@@ -298,11 +298,23 @@ SLA ΣΤΟΧΟΙ:
     return {"response": cleaned_text, "actions": actions}
 
 
-async def classify_image(image_bytes: bytes, description: str = None) -> dict:
-    client = get_client()
-    image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+_AI_FALLBACK = {
+    "category": "other",
+    "severity": "medium",
+    "confidence": 0.0,
+    "department": "technical_services",
+    "reasoning": "Αυτόματη κατηγοριοποίηση μη διαθέσιμη",
+    "fallback_reason": "ai_error",
+}
 
-    prompt = f"""
+
+async def classify_image(image_bytes: bytes, description: str = None) -> dict:
+    """Returns fallback dict on ANY error — never raises."""
+    try:
+        client = get_client()
+        image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+
+        prompt = f"""
 Είσαι σύστημα κατηγοριοποίησης προβλημάτων για τον Δήμο Ηρακλείου.
 Ανάλυσε την εικόνα και κατηγοριοποίησε το πρόβλημα.
 {"Περιγραφή πολίτη: " + description if description else ""}
@@ -322,29 +334,43 @@ async def classify_image(image_bytes: bytes, description: str = None) -> dict:
 - low: αισθητικό πρόβλημα
 """
 
-    message = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=500,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
-                {"type": "text", "text": prompt}
-            ],
-        }],
-    )
+        message = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=500,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
+                    {"type": "text", "text": prompt}
+                ],
+            }],
+        )
 
-    raw_text = message.content[0].text
-    print(f"🤖 Claude response: {raw_text}")
+        raw_text = message.content[0].text
+        logger.info(f"[AI_CLASSIFY] Response: {raw_text[:200]}")
 
-    json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-    if json_match:
-        result = json.loads(json_match.group())
-    else:
-        result = {"category": "other", "severity": "medium", "confidence": 0.5, "reasoning": "Δεν ήταν δυνατή η αυτόματη κατηγοριοποίηση"}
+        json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group())
+        else:
+            result = {"category": "other", "severity": "medium", "confidence": 0.5, "reasoning": "Δεν ήταν δυνατή η αυτόματη κατηγοριοποίηση"}
 
-    result["department"] = CATEGORIES.get(result["category"], "technical_services")
-    return result
+        result["department"] = CATEGORIES.get(result["category"], "technical_services")
+        return result
+
+    except Exception as e:
+        error_str = str(e)
+        is_overloaded = "529" in error_str or "overloaded" in error_str.lower()
+        is_rate_limit = "429" in error_str or "rate_limit" in error_str
+        is_timeout = "timeout" in error_str.lower()
+        fallback_reason = (
+            "ai_overloaded" if is_overloaded else
+            "ai_rate_limited" if is_rate_limit else
+            "ai_timeout" if is_timeout else
+            "ai_error"
+        )
+        logger.warning(f"[AI_CLASSIFY] Failed ({type(e).__name__}), using fallback: {error_str[:200]}")
+        return {**_AI_FALLBACK, "fallback_reason": fallback_reason}
 
 
 async def chat_with_claude(messages: list, user_id: str = None) -> str:
