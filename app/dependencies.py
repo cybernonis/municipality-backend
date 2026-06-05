@@ -50,6 +50,7 @@ async def get_current_user(
         )
         if not profile.data:
             raise HTTPException(status_code=401, detail="Χρήστης δεν βρέθηκε.")
+        print(f"[AUTH] uid={uid} profile={profile.data}")
         return profile.data
     except HTTPException:
         raise
@@ -86,13 +87,21 @@ def require_permission(permission: str):
         request: Request,
         user: dict = Depends(get_current_user),
     ) -> dict:
-        role = user.get("role", "")
+        role = user.get("role") or ""   # handles None values from DB
         allowed = has_permission(role, permission)
+        logger.info(
+            f"[PERM] user={user.get('id')} role={role!r} "
+            f"permission={permission} allowed={allowed}"
+        )
+        print(
+            f"[PERM] user={user.get('id')} role={role!r} "
+            f"user_keys={list(user.keys())} permission={permission} allowed={allowed}"
+        )
         _write_audit(user["id"], role, action, resource, allowed, _get_ip(request))
         if not allowed:
             raise HTTPException(
                 status_code=403,
-                detail="Δεν έχετε δικαίωμα για αυτή την ενέργεια.",
+                detail=f"Δεν έχετε δικαίωμα για αυτή την ενέργεια. [role={role!r}]",
             )
         return user
 

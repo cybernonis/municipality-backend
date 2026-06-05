@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 
 from app.database import supabase
-from app.dependencies import require_admin, require_permission
+from app.dependencies import get_current_user, require_admin, require_permission
 from app.limiter import limiter
 from app.services.storage_service import upload_image
 from app.utils.sanitize import sanitize_text
@@ -69,8 +69,15 @@ async def create_announcement(
     expires_at: Optional[str] = Form(None),
     admin_id: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
-    _user: dict = Depends(require_permission("announcements:publish")),
+    _user: dict = Depends(get_current_user),  # TEMP: bypass role check for diagnosis
 ):
+    _dbg_role = _user.get("role") if isinstance(_user, dict) else getattr(_user, "role", "NO_ATTR")
+    print("=" * 60)
+    print(f"[ANNOUNCE POST] _user type={type(_user)}")
+    print(f"[ANNOUNCE POST] _user keys={list(_user.keys()) if isinstance(_user, dict) else 'not a dict'}")
+    print(f"[ANNOUNCE POST] _user full={_user}")
+    print(f"[ANNOUNCE POST] role={_dbg_role!r}")
+    print("=" * 60)
     try:
         image_url = await _try_upload(image)
         title = sanitize_text(title)

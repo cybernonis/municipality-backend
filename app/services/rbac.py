@@ -20,7 +20,10 @@ PERMISSIONS: dict[str, set[str]] = {
 }
 
 
-def has_permission(role: str, permission: str) -> bool:
+def has_permission(role: str | None, permission: str) -> bool:
+    if not role:
+        return False
+    role = role.strip().lower()
     perms = PERMISSIONS.get(role, set())
     if permission in perms:           # exact match
         return True
