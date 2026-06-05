@@ -54,6 +54,10 @@ class MFARecoveryRequest(BaseModel):
     email: str
     code: str
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
 
 # ── HTML templates ────────────────────────────────────────────────────────────
 
@@ -605,3 +609,54 @@ async def revoke_all_sessions(
         logger.error(f"[REVOKE ALL] {e}")
         raise HTTPException(status_code=500, detail="Σφάλμα κατά τον τερματισμό όλων των συνεδριών.")
     return {"message": "Όλες οι συνεδρίες τερματίστηκαν επιτυχώς."}
+
+
+# ── F. Change password ────────────────────────────────────────────────────────
+
+@router.post("/change-password")
+@limiter.limit("5/minute")
+async def change_password(
+    request: Request,
+    body: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user.get("id")
+    user_email = current_user.get("email")
+    if not user_id or not user_email:
+        raise HTTPException(status_code=401, detail="Μη έγκυρο token")
+
+    pwd = body.new_password
+    errors = []
+    if len(pwd) < 8:
+        errors.append("τουλάχιστον 8 χαρακτήρες")
+    if not any(c.isupper() for c in pwd):
+        errors.append("1 κεφαλαίο γράμμα")
+    if not any(c.islower() for c in pwd):
+        errors.append("1 πεζό γράμμα")
+    if not any(c.isdigit() for c in pwd):
+        errors.append("1 αριθμό")
+    if errors:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ο κωδικός πρέπει να περιέχει: {', '.join(errors)}",
+        )
+
+    # Verify current password — auth client (never service-role)
+    try:
+        verify = get_auth_client().auth.sign_in_with_password({
+            "email": user_email,
+            "password": body.current_password,
+        })
+        if not verify or not verify.session:
+            raise ValueError("no session")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Λάθος τρέχων κωδικός")
+
+    # Update password via admin client
+    try:
+        get_supabase().auth.admin.update_user_by_id(user_id, {"password": pwd})
+    except Exception as e:
+        logger.error(f"[CHANGE_PWD] admin update failed user_id={user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Σφάλμα αλλαγής κωδικού. Δοκιμάστε ξανά.")
+
+    return {"success": True, "message": "Ο κωδικός σας άλλαξε επιτυχώς."}
