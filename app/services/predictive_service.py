@@ -122,3 +122,4 @@ def predict_maintenance() -> dict:
         "historical_data": hist,
         "predictions": result
     }
+2

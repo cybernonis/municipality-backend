@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.database import get_supabase
+from app.database import supabase
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -14,23 +14,41 @@ XP_MAP = {
     "report_resolved":  50,
     "first_report":     100,
     "rating_given":     5,
-    "volunteering":     25,
-    "donation":         25,
 }
+
+BADGE_THRESHOLDS = [
+    (1,  "Πρώτη Αναφορά"),
+    (10, "10 Αναφορές"),
+    (50, "Super Citizen"),
+]
 
 
 def _level_for(points: int) -> int:
-    if points < 100:
-        return 1
-    if points < 250:
-        return 2
-    if points < 500:
-        return 3
-    if points < 1000:
-        return 4
-    if points < 2000:
-        return 5
-    return 6 + (points - 2000) // 1000
+    return max(1, points // 100 + 1)
+
+
+def _compute_badges(user_id: str, current_badges: list) -> list:
+    print(f"[badges] Computing for user_id={user_id}, current_badges={current_badges}")
+    result = supabase.table("reports").select("id", count="exact").eq("user_id", user_id).execute()
+    total_reports = result.count or 0
+    print(f"[badges] user_id={user_id} total_reports={total_reports}")
+
+    new_badges = []
+    if total_reports >= 1  and "Πρώτη Αναφορά" not in current_badges:
+        new_badges.append("Πρώτη Αναφορά")
+    if total_reports >= 10 and "10 Αναφορές"   not in current_badges:
+        new_badges.append("10 Αναφορές")
+    if total_reports >= 50 and "Super Citizen"  not in current_badges:
+        new_badges.append("Super Citizen")
+
+    print(f"[badges] new_badges={new_badges}")
+
+    if new_badges:
+        all_badges = current_badges + new_badges
+        supabase.table("user_points").update({"badges": all_badges}).eq("user_id", user_id).execute()
+        print(f"[badges] DB updated with all_badges={all_badges}")
+
+    return new_badges
 
 
 class AwardRequest(BaseModel):
@@ -39,212 +57,118 @@ class AwardRequest(BaseModel):
 
 
 @router.post("/award")
-async def award_points(payload: AwardRequest):
+def award_points(payload: AwardRequest):
     if payload.action not in XP_MAP:
         raise HTTPException(
             status_code=400,
             detail=f"Άγνωστη action. Επιτρεπτές: {list(XP_MAP)}",
         )
-
-    user_id = payload.user_id
-    action  = payload.action
-    print(f"[AWARD XP] user_id={user_id}, action={action}")
-
+    print(f"[award] user_id={payload.user_id} action={payload.action}")
     try:
-        client = get_supabase()
-
-        # 1. Διάβασε τρέχον record
-        existing = client.table("user_points").select("*").eq("user_id", user_id).execute()
-        print(f"[UPSERT] Existing record: {existing.data}")
-
-        current_points = 0
-        current_badges: list = []
+        existing = supabase.table("user_points").select("*").eq("user_id", payload.user_id).execute()
+        print(f"[award] existing record found: {bool(existing.data)}")
 
         if existing.data:
-            current_points = existing.data[0].get("points", 0) or 0
-            current_badges = existing.data[0].get("badges") or []
+            record = existing.data[0]
+        else:
+            print(f"[award] No record — inserting new user_points row for user_id={payload.user_id}")
+            init = supabase.table("user_points").insert({
+                "user_id": payload.user_id,
+                "points": 0,
+                "badges": [],
+                "level": 1,
+                "carbon_saved": 0.0,
+            }).execute()
+            record = init.data[0]
 
-        # 2. Υπολόγισε νέα XP
-        xp = XP_MAP[action]
-        is_first_report = action == "first_report"
-        if is_first_report and "Πρώτη Αναφορά" in current_badges:
-            print("[AWARD XP] first_report already awarded — skipping XP")
+        current_points  = record["points"]
+        current_badges  = record.get("badges") or []
+        current_level   = record["level"]
+        print(f"[award] current: points={current_points}, level={current_level}, badges={current_badges}")
+
+        xp = XP_MAP[payload.action]
+        if payload.action == "first_report" and "Πρώτη Αναφορά" in current_badges:
+            print("[award] first_report already awarded — skipping XP")
             xp = 0
 
-        new_total = current_points + xp
-        new_level = _level_for(new_total)
+        new_points = current_points + xp
+        new_level  = _level_for(new_points)
+        print(f"[award] xp_awarded={xp}, new_points={new_points}, new_level={new_level}")
 
-        # 3. Υπολόγισε badges από reports count
-        reports_resp = (
-            client.table("reports")
-            .select("id", count="exact")
-            .eq("user_id", user_id)
-            .execute()
-        )
-        count = reports_resp.count or 0
-        print(f"[AWARD XP] reports count={count}")
+        supabase.table("user_points").update({
+            "points":     new_points,
+            "level":      new_level,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("user_id", payload.user_id).execute()
+        print(f"[award] user_points updated in DB")
 
-        new_badges = list(current_badges)
-        if count >= 1  and "Πρώτη Αναφορά" not in new_badges:
-            new_badges.append("Πρώτη Αναφορά")
-        if count >= 10 and "10 Αναφορές"   not in new_badges:
-            new_badges.append("10 Αναφορές")
-        if count >= 50 and "Super Citizen"  not in new_badges:
-            new_badges.append("Super Citizen")
+        new_badges = _compute_badges(payload.user_id, current_badges)
+        all_badges = current_badges + new_badges
 
-        added_badges = [b for b in new_badges if b not in current_badges]
-
-        # 4. UPSERT στο Supabase
-        print(f"[UPSERT] Writing user_id={user_id}, points={new_total}, level={new_level}, badges={new_badges}")
-
-        if existing.data:
-            result = (
-                client.table("user_points")
-                .update({
-                    "points": new_total,
-                    "level":  new_level,
-                    "badges": new_badges,
-                })
-                .eq("user_id", user_id)
-                .execute()
-            )
-        else:
-            result = (
-                client.table("user_points")
-                .insert({
-                    "user_id":      user_id,
-                    "points":       new_total,
-                    "level":        new_level,
-                    "badges":       new_badges,
-                    "carbon_saved": 0,
-                })
-                .execute()
-            )
-
-        print(f"[UPSERT] Result data: {result.data}")
-        print(f"[AWARD XP] xp_awarded={xp}, total={new_total}, badges={added_badges}")
-
+        print(f"[award] Done. xp={xp}, total={new_points}, new_badges={new_badges}")
         return {
+            "user_id":      payload.user_id,
+            "action":       payload.action,
             "xp_awarded":   xp,
-            "total_points": new_total,
+            "total_points": new_points,
             "level":        new_level,
-            "new_badges":   added_badges,
-            "first_report": count == 1,
+            "leveled_up":   new_level > current_level,
+            "new_badges":   new_badges,
+            "all_badges":   all_badges,
         }
-
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        logger.error(f"award_points ERROR: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/user-points/{user_id}")
-async def get_user_points(user_id: str):
-    try:
-        client = get_supabase()
-        result = client.table("user_points").select("*").eq("user_id", user_id).execute()
-
-        if not result.data:
-            return {
-                "user_id":      user_id,
-                "points":       0,
-                "level":        1,
-                "badges":       [],
-                "carbon_saved": 0,
-            }
-
-        row = result.data[0]
-        return {
-            "user_id":      row["user_id"],
-            "points":       row.get("points", 0) or 0,
-            "level":        row.get("level", 1) or 1,
-            "badges":       row.get("badges") or [],
-            "carbon_saved": row.get("carbon_saved", 0) or 0,
-        }
-
-    except Exception as e:
-        print(f"[USER POINTS ERROR] {e}")
-        return {"user_id": user_id, "points": 0, "level": 1, "badges": [], "carbon_saved": 0}
-
-
-@router.get("/stats/{user_id}")
-async def get_user_stats(user_id: str):
-    try:
-        client = get_supabase()
-        result = client.table("user_points").select("*").eq("user_id", user_id).execute()
-        if not result.data:
-            return {"user_id": user_id, "points": 0, "badges": [], "level": 1}
-        row = result.data[0]
-        return {
-            "user_id": user_id,
-            "points":  row.get("points", 0) or 0,
-            "badges":  row.get("badges") or [],
-            "level":   row.get("level", 1) or 1,
-        }
-    except Exception as e:
+        logger.exception(f"[award] Unexpected error for user_id={payload.user_id}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/leaderboard")
-async def get_leaderboard():
+def get_leaderboard():
     try:
-        client = get_supabase()
-        print("[LEADERBOARD] Starting query...")
-
-        # RLS / connectivity check — αν count==0 ενώ έχουμε records → RLS block
-        test = client.table("user_points").select("count", count="exact").execute()
-        print(f"[LEADERBOARD] Table count: {test.count}")
-
-        points_resp = (
-            client.table("user_points")
-            .select("user_id, points, level, badges")
+        print("[leaderboard] Fetching top 10 from user_points...")
+        points_result = (
+            supabase.table("user_points")
+            .select("user_id, points, badges, level")
             .order("points", desc=True)
-            .limit(50)
+            .limit(10)
             .execute()
         )
+        rows = points_result.data or []
+        print(f"[leaderboard] Got {len(rows)} rows")
 
-        print(f"[LEADERBOARD] Raw data: {points_resp.data}")
-        print(f"[LEADERBOARD] Count: {len(points_resp.data) if points_resp.data else 0}")
+        user_ids = [row["user_id"] for row in rows]
+        name_map: dict = {}
+        if user_ids:
+            try:
+                users_result = (
+                    supabase.table("users")
+                    .select("id, full_name")
+                    .in_("id", user_ids)
+                    .execute()
+                )
+                name_map = {
+                    u["id"]: u.get("full_name") or "Ανώνυμος"
+                    for u in (users_result.data or [])
+                }
+                print(f"[leaderboard] Resolved {len(name_map)} display names")
+            except Exception as name_err:
+                print(f"[leaderboard] WARNING: could not fetch user names: {name_err}")
 
-        if not points_resp.data:
-            print("[LEADERBOARD] No data found — returning empty list")
-            return {"leaderboard": []}
-
-        user_ids = [r["user_id"] for r in points_resp.data]
-        print(f"[LEADERBOARD] User IDs: {user_ids}")
-
-        users_resp = (
-            client.table("user_profiles")
-            .select("id, full_name, email")
-            .in_("id", user_ids)
-            .execute()
-        )
-
-        print(f"[LEADERBOARD] Users found: {users_resp.data}")
-
-        users_map = {u["id"]: u for u in (users_resp.data or [])}
-
-        leaderboard = []  # ΠΑΝΤΑ list, ποτέ dict
-        for i, row in enumerate(points_resp.data):
-            user = users_map.get(row.get("user_id"), {})
-            entry = {
-                "rank":      i + 1,
-                "user_id":   row.get("user_id", ""),
-                "full_name": user.get("full_name", "Ανώνυμος"),
-                "points":    row.get("points", 0) or 0,
-                "level":     row.get("level", 1) or 1,
-                "badges":    row.get("badges") or [],
+        leaderboard = [
+            {
+                "rank":         rank,
+                "user_id":      row["user_id"],
+                "display_name": name_map.get(row["user_id"], "Ανώνυμος"),
+                "points":       row["points"],
+                "badges":       row.get("badges") or [],
+                "level":        row["level"],
             }
-            leaderboard.append(entry)
-            print(f"[LEADERBOARD] Entry {i + 1}: {entry}")
-
-        print(f"[LEADERBOARD] Final list length: {len(leaderboard)}")
-        return {"leaderboard": leaderboard}
-
+            for rank, row in enumerate(rows, start=1)
+        ]
+        return {"leaderboard": leaderboard, "total": len(leaderboard)}
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[LEADERBOARD ERROR] {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return {"leaderboard": []}
+        logger.exception("[leaderboard] Unexpected error")
+        raise HTTPException(status_code=500, detail=str(e))
