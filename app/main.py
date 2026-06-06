@@ -29,6 +29,7 @@ from app.routers import places
 from app.routers import traffic
 from app.routers import closed_roads
 from app.routers import ai_actions
+from app.routers import ai_agent
 from app.services.sla_service import check_sla_violations
 from app.routers import staff
 from app.routers import admin
@@ -160,6 +161,7 @@ app.include_router(places.router,         prefix="/places",         tags=["Place
 app.include_router(traffic.router,        prefix="/traffic",        tags=["Traffic"])
 app.include_router(closed_roads.router,   prefix="/closed-roads",   tags=["Closed Roads"])
 app.include_router(ai_actions.router)
+app.include_router(ai_agent.router)
 app.include_router(admin.router,          prefix="/admin",          tags=["Admin"])
 
 @app.get("/")
