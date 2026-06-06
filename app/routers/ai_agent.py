@@ -189,7 +189,7 @@ def execute_create_announcement(params: dict, user_id: str) -> dict:
             "category": params.get("category", "general"),
             "is_urgent": bool(params.get("is_urgent", False)),
             "is_important": bool(params.get("is_important", False)),
-            "created_by": user_id,
+            "admin_id": user_id,
         }
         if params.get("expires_at"):
             row["expires_at"] = params["expires_at"]
