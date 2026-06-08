@@ -19,7 +19,7 @@ def _build_rule_based_advice(signals: dict) -> list[dict]:
     now = datetime.now(timezone.utc)
     hour = now.hour
 
-    # ── CRISIS (always first) ────────────────────────────────────────
+    # ── CRISIS ────────────────────────────────────────────────────
     if signals.get("active_crisis"):
         cards.append({
             "id": "crisis",
@@ -28,10 +28,13 @@ def _build_rule_based_advice(signals: dict) -> list[dict]:
             "title": "Έκτακτη Ανακοίνωση",
             "message": signals["active_crisis"].get("message", "Δες λεπτομέρειες.")[:120],
             "color": "#D32F2F",
-            "action": "view_announcements",
+            "actions": [
+                {"label": "📢 Λεπτομέρειες", "type": "internal", "value": "view_announcements"},
+                {"label": "📞 199", "type": "url", "value": "tel:199"},
+            ],
         })
 
-    # ── TRAFFIC ──────────────────────────────────────────────────────
+    # ── TRAFFIC ──────────────────────────────────────────────────
     congestion = signals.get("traffic_congestion_pct", 0)
     if congestion > 70:
         cards.append({
@@ -39,9 +42,13 @@ def _build_rule_based_advice(signals: dict) -> list[dict]:
             "priority": 90,
             "icon": "🚦",
             "title": "Έντονη Κυκλοφορία",
-            "message": "Πολύ έντονη κίνηση στο κέντρο τώρα. Προτίμησε δημόσια συγκοινωνία ή ταξί.",
+            "message": "Πολύ έντονη κίνηση στο κέντρο. Προτείνω εναλλακτικές:",
             "color": "#E53935",
-            "action": "view_traffic_map",
+            "actions": [
+                {"label": "🚌 Λεωφορείο", "type": "url", "value": "https://www.astiko-irakleiou.gr/"},
+                {"label": "🚕 Ταξί", "type": "url", "value": "tel:2810210102"},
+                {"label": "🗺️ Χάρτης", "type": "internal", "value": "view_traffic_map"},
+            ],
         })
     elif congestion > 50:
         cards.append({
@@ -49,12 +56,15 @@ def _build_rule_based_advice(signals: dict) -> list[dict]:
             "priority": 60,
             "icon": "🚙",
             "title": "Μέτρια Κυκλοφορία",
-            "message": "Αρκετή κίνηση. Υπολόγισε +10' στο χρόνο σου.",
+            "message": "Αρκετή κίνηση. Υπολόγισε +10 λεπτά στη διαδρομή σου.",
             "color": "#FB8C00",
-            "action": "view_traffic_map",
+            "actions": [
+                {"label": "🗺️ Χάρτης", "type": "internal", "value": "view_traffic_map"},
+                {"label": "🚌 Λεωφορείο", "type": "url", "value": "https://www.astiko-irakleiou.gr/"},
+            ],
         })
 
-    # ── HEAT ─────────────────────────────────────────────────────────
+    # ── HEAT ──────────────────────────────────────────────────────
     temp = signals.get("weather_temp")
     if temp is not None and temp > 35:
         cards.append({
@@ -62,36 +72,44 @@ def _build_rule_based_advice(signals: dict) -> list[dict]:
             "priority": 85,
             "icon": "🌡️",
             "title": "Καύσωνας",
-            "message": f"Πολύ ζέστη ({int(temp)}°C). Πιες νερό, μείνε σε σκιά 12:00–16:00.",
+            "message": f"Πολύ ζέστη ({int(temp)}°C). Μείνε ασφαλής.",
             "color": "#E64A19",
-            "action": None,
+            "actions": [
+                {"label": "💧 Σημεία Νερού", "type": "internal", "value": "view_water_spots"},
+                {"label": "🌳 Σκιαζόμενοι Χώροι", "type": "internal", "value": "view_shade_spots"},
+            ],
         })
 
-    # ── RAIN ─────────────────────────────────────────────────────────
+    # ── RAIN ──────────────────────────────────────────────────────
     if signals.get("weather_rain"):
         cards.append({
             "id": "weather_rain",
             "priority": 80,
             "icon": "🌧️",
             "title": "Βροχή",
-            "message": "Έχει βροχή. Πάρε ομπρέλα και πρόσεξε τις λακκούβες στο δρόμο σου.",
+            "message": "Έχει βροχή. Πρόσεξε λακκούβες και ολισθηρότητα.",
             "color": "#1976D2",
-            "action": "view_weather",
+            "actions": [
+                {"label": "⚠️ Αναφορά Λακκούβας", "type": "internal", "value": "report_pothole"},
+                {"label": "🌦️ Πρόγνωση", "type": "url", "value": "https://www.meteo.gr/cf-el.cfm?city_id=8"},
+            ],
         })
 
-    # ── WIND ─────────────────────────────────────────────────────────
+    # ── WIND ──────────────────────────────────────────────────────
     if signals.get("weather_strong_wind"):
         cards.append({
             "id": "strong_wind",
             "priority": 75,
             "icon": "💨",
             "title": "Ισχυροί Άνεμοι",
-            "message": f"Άνεμοι {signals['weather_wind_kmh']} km/h. Πρόσεχε πτώσεις κλαδιών.",
+            "message": f"Άνεμοι {signals['weather_wind_kmh']} km/h. Πρόσεχε.",
             "color": "#455A64",
-            "action": None,
+            "actions": [
+                {"label": "⚠️ Αναφορά Κλαδιού", "type": "internal", "value": "report_fallen_tree"},
+            ],
         })
 
-    # ── CLOSED ROADS ─────────────────────────────────────────────────
+    # ── CLOSED ROADS ──────────────────────────────────────────────
     closed_roads = signals.get("closed_roads_count", 0)
     if closed_roads > 0:
         cards.append({
@@ -99,21 +117,26 @@ def _build_rule_based_advice(signals: dict) -> list[dict]:
             "priority": 70,
             "icon": "🚧",
             "title": f"{closed_roads} Κλειστοί Δρόμοι",
-            "message": "Υπάρχουν κλειστοί δρόμοι. Δες εναλλακτικές πριν ξεκινήσεις.",
+            "message": "Δες ποιοι δρόμοι είναι κλειστοί πριν ξεκινήσεις.",
             "color": "#F57C00",
-            "action": "view_closed_roads",
+            "actions": [
+                {"label": "🗺️ Δες όλους", "type": "internal", "value": "view_closed_roads"},
+            ],
         })
 
-    # ── SERVICE HOURS ─────────────────────────────────────────────────
+    # ── SERVICE HOURS ─────────────────────────────────────────────
     if hour >= 19 or hour < 7:
         cards.append({
             "id": "after_hours",
             "priority": 30,
             "icon": "🌙",
             "title": "Εκτός Ωραρίου",
-            "message": "ΚΕΠ και υπηρεσίες κλειστές. Online υπηρεσίες λειτουργούν 24/7.",
+            "message": "ΚΕΠ κλειστά. Οι online υπηρεσίες λειτουργούν 24/7.",
             "color": "#5E35B1",
-            "action": "view_services",
+            "actions": [
+                {"label": "💻 Online Υπηρεσίες", "type": "internal", "value": "view_services"},
+                {"label": "📞 Επικοινωνία", "type": "url", "value": "tel:2810399100"},
+            ],
         })
     elif 7 <= hour < 9:
         cards.append({
@@ -121,21 +144,25 @@ def _build_rule_based_advice(signals: dict) -> list[dict]:
             "priority": 25,
             "icon": "☀️",
             "title": "Καλημέρα!",
-            "message": "Οι υπηρεσίες ανοίγουν σε λίγο. Καλή σου μέρα στο Ηράκλειο!",
+            "message": "Οι υπηρεσίες ανοίγουν σε λίγο.",
             "color": "#FB8C00",
-            "action": None,
+            "actions": [
+                {"label": "🏛️ Υπηρεσίες", "type": "internal", "value": "view_services"},
+            ],
         })
 
-    # ── WEEKEND ───────────────────────────────────────────────────────
+    # ── WEEKEND ───────────────────────────────────────────────────
     if now.weekday() >= 5:
         cards.append({
             "id": "weekend_events",
             "priority": 20,
             "icon": "🎉",
             "title": "Σαββατοκύριακο",
-            "message": "Δες τι εκδηλώσεις γίνονται στην πόλη σήμερα!",
+            "message": "Δες εκδηλώσεις και ανακοινώσεις!",
             "color": "#7B1FA2",
-            "action": "view_announcements",
+            "actions": [
+                {"label": "📢 Ανακοινώσεις", "type": "internal", "value": "view_announcements"},
+            ],
         })
 
     cards.sort(key=lambda c: -c["priority"])
