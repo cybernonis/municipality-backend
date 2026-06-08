@@ -34,6 +34,7 @@ from app.routers import notifications
 from app.services.sla_service import check_sla_violations
 from app.routers import staff
 from app.routers import admin
+from app.routers import citizen
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 logger = logging.getLogger(__name__)
@@ -165,6 +166,7 @@ app.include_router(ai_actions.router)
 app.include_router(ai_agent.router)
 app.include_router(admin.router,          prefix="/admin",          tags=["Admin"])
 app.include_router(notifications.router)
+app.include_router(citizen.router)
 
 @app.get("/")
 def root():
