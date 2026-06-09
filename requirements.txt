@@ -17,3 +17,4 @@ firebase-admin
 slowapi==0.1.9
 bleach==6.2.0
 sentry-sdk[fastapi]==2.61.1
+PyJWT==2.9.0

@@ -24,6 +24,7 @@ from app.routers import external
 from app.routers import announcements, appointments, smart_tips
 from app.routers import gamification, carbon
 from app.routers import crews
+from app.routers import crew_portal
 from app.routers import gdpr
 from app.routers import places
 from app.routers import traffic
@@ -118,10 +119,13 @@ app.add_middleware(SecurityHeadersMiddleware)
 _DEFAULT_ORIGINS = [
     "https://municipality-dashboard-alpha.vercel.app",
     "https://municipality-dashboard.vercel.app",
+    "https://municipality-crew.vercel.app",
     "http://localhost:3000",
+    "http://localhost:4173",
     "http://localhost:5173",
     "http://localhost:8080",
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:4173",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:8080",
 ]
@@ -158,6 +162,7 @@ app.include_router(smart_tips.router,     prefix="/smart-tips",     tags=["Smart
 app.include_router(gamification.router,   prefix="/gamification",   tags=["Gamification"])
 app.include_router(carbon.router,         prefix="/carbon",         tags=["Carbon"])
 app.include_router(crews.router)
+app.include_router(crew_portal.router)
 app.include_router(gdpr.router,           prefix="/gdpr",           tags=["GDPR"])
 app.include_router(places.router,         prefix="/places",         tags=["Places"])
 app.include_router(traffic.router,        prefix="/traffic",        tags=["Traffic"])
