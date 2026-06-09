@@ -165,8 +165,156 @@ def _build_rule_based_advice(signals: dict) -> list[dict]:
             ],
         })
 
+    # ─── USER: PENDING REPORTS ──────────────────────────
+    pending_reports = signals.get("user_pending_reports", 0)
+    if pending_reports > 0:
+        cards.append({
+            "id": "pending_reports",
+            "priority": 65,
+            "icon": "📋",
+            "title": f"Έχεις {pending_reports} εκκρεμή αναφορά"
+                     + ("" if pending_reports == 1 else "ς"),
+            "message": "Δες τη πρόοδό τους και την εκτιμώμενη επίλυση.",
+            "color": "#0277BD",
+            "actions": [
+                {"label": "📋 Οι αναφορές μου", "type": "internal", "value": "view_my_reports"},
+            ],
+        })
+
+    # ─── UPCOMING APPOINTMENT ───────────────────────────
+    appt = signals.get("next_appointment")
+    if appt:
+        appt_date_str = appt.get("appointment_date", "")
+        try:
+            appt_date = datetime.fromisoformat(appt_date_str.replace("Z", "+00:00"))
+            days_until = (appt_date.date() - datetime.now(timezone.utc).date()).days
+            when = "σήμερα" if days_until == 0 else \
+                   "αύριο" if days_until == 1 else \
+                   f"σε {days_until} μέρες"
+            cards.append({
+                "id": "upcoming_appointment",
+                "priority": 80,
+                "icon": "📅",
+                "title": f"Ραντεβού {when}",
+                "message": f"{appt.get('service_type', 'Δημοτική υπηρεσία')} στις {appt_date.strftime('%H:%M')}",
+                "color": "#00897B",
+                "actions": [
+                    {"label": "📅 Λεπτομέρειες", "type": "internal", "value": "view_appointments"},
+                ],
+            })
+        except Exception:
+            pass
+
+    # ─── AIR QUALITY ────────────────────────────────────
+    aqi = signals.get("air_quality_index")
+    if aqi is not None:
+        if aqi > 100:
+            cards.append({
+                "id": "air_quality_bad",
+                "priority": 78,
+                "icon": "🌫️",
+                "title": "Χαμηλή Ποιότητα Αέρα",
+                "message": f"Δείκτης AQI: {int(aqi)}. Αν είσαι ευαίσθητος, μείνε σε εσωτερικό χώρο.",
+                "color": "#6A1B9A",
+                "actions": [],
+            })
+        elif aqi < 50 and 9 <= hour <= 18:
+            cards.append({
+                "id": "air_quality_good",
+                "priority": 15,
+                "icon": "🌿",
+                "title": "Καλή Ποιότητα Αέρα",
+                "message": "Ιδανική μέρα για περπάτημα ή ποδήλατο στο κέντρο.",
+                "color": "#388E3C",
+                "actions": [],
+            })
+
+    # ─── UV INDEX ───────────────────────────────────────
+    uv = signals.get("uv_index")
+    if uv is not None and uv > 7 and 10 <= hour <= 16:
+        cards.append({
+            "id": "uv_high",
+            "priority": 72,
+            "icon": "☀️",
+            "title": f"Υψηλός Δείκτης UV ({int(uv)})",
+            "message": "Έντονη ηλιακή ακτινοβολία. Βάλε αντηλιακό, καπέλο και γυαλιά.",
+            "color": "#F57F17",
+            "actions": [],
+        })
+
+    # ─── SUNSET ─────────────────────────────────────────
+    sunset_str = signals.get("sunset_today")
+    if sunset_str:
+        try:
+            sunset_dt = datetime.fromisoformat(sunset_str.replace("Z", "+00:00"))
+            now_utc = datetime.now(timezone.utc)
+            sunset_with_tz = sunset_dt if sunset_dt.tzinfo else sunset_dt.replace(tzinfo=timezone.utc)
+            minutes_until_sunset = (sunset_with_tz - now_utc).total_seconds() / 60
+            if 30 <= minutes_until_sunset <= 90:
+                cards.append({
+                    "id": "sunset_soon",
+                    "priority": 35,
+                    "icon": "🌅",
+                    "title": "Ηλιοβασίλεμα σε λίγο",
+                    "message": f"Στις {sunset_dt.strftime('%H:%M')}. Ιδανικό για βόλτα στη παραλία!",
+                    "color": "#EF6C00",
+                    "actions": [],
+                })
+        except Exception:
+            pass
+
+    # ─── SEA / SWIMMING ─────────────────────────────────
+    month = now.month
+    temp = signals.get("weather_temp", 0)
+    if 5 <= month <= 10 and temp and temp > 22 and 9 <= hour <= 19:
+        sea_temps = {5: 19, 6: 22, 7: 25, 8: 26, 9: 25, 10: 22}
+        sea_temp = sea_temps.get(month, 20)
+        cards.append({
+            "id": "swimming_good",
+            "priority": 28,
+            "icon": "🌊",
+            "title": "Καλή Μέρα για Κολύμβι",
+            "message": f"Θάλασσα ~{sea_temp}°C. Παραλίες κοντά: Αμμουδάρα, Καρτερός, Αμνισός.",
+            "color": "#0288D1",
+            "actions": [
+                {"label": "🏖️ Αμμουδάρα", "type": "url", "value": "https://maps.google.com/?q=Ammoudara+Beach+Heraklion"},
+                {"label": "🏖️ Καρτερός", "type": "url", "value": "https://maps.google.com/?q=Karteros+Beach"},
+            ],
+        })
+
+    # ─── UPCOMING EVENTS ────────────────────────────────
+    events_data = signals.get("upcoming_events", [])
+    if events_data:
+        event = events_data[0]
+        cards.append({
+            "id": "event_today",
+            "priority": 40,
+            "icon": "🎉",
+            "title": "Εκδήλωση",
+            "message": (event.get("title", "Δες λεπτομέρειες")[:80]),
+            "color": "#7B1FA2",
+            "actions": [
+                {"label": "📢 Λεπτομέρειες", "type": "internal", "value": "view_announcements"},
+            ],
+        })
+
+    # ─── PAYMENT REMINDER ───────────────────────────────
+    day_of_month = now.day
+    if 20 <= day_of_month <= 31:
+        cards.append({
+            "id": "month_end_payments",
+            "priority": 22,
+            "icon": "💰",
+            "title": "Τέλος Μήνα",
+            "message": "Έλεγξε αν έχεις εκκρεμείς πληρωμές δημοτικών τελών.",
+            "color": "#00838F",
+            "actions": [
+                {"label": "💳 ePay", "type": "url", "value": "https://e-services.heraklion.gr/"},
+            ],
+        })
+
     cards.sort(key=lambda c: -c["priority"])
-    return cards[:3]
+    return cards[:4]
 
 
 async def _gather_signals(user_id: Optional[str]) -> dict:
@@ -225,6 +373,104 @@ async def _gather_signals(user_id: Optional[str]) -> dict:
             }
     except Exception:
         signals["active_crisis"] = None
+
+    # ─── AIR QUALITY ────────────────────────────────
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            aq_response = await client.get(
+                "https://air-quality-api.open-meteo.com/v1/air-quality",
+                params={
+                    "latitude": 35.3387,
+                    "longitude": 25.1442,
+                    "current": "european_aqi,uv_index,pm10,pm2_5",
+                },
+            )
+            if aq_response.status_code == 200:
+                aq_data = aq_response.json()
+                current = aq_data.get("current", {})
+                signals["air_quality_index"] = current.get("european_aqi")
+                signals["uv_index"] = current.get("uv_index")
+                signals["pm25"] = current.get("pm2_5")
+                signals["pm10"] = current.get("pm10")
+    except Exception as e:
+        print(f"[smart-advice] Air quality fetch failed: {e}")
+
+    # ─── SUNSET ─────────────────────────────────────
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            sun_response = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": 35.3387,
+                    "longitude": 25.1442,
+                    "daily": "sunrise,sunset",
+                    "timezone": "Europe/Athens",
+                },
+            )
+            if sun_response.status_code == 200:
+                sun_data = sun_response.json()
+                daily = sun_data.get("daily", {})
+                sunsets = daily.get("sunset", [])
+                sunrises = daily.get("sunrise", [])
+                if sunsets:
+                    signals["sunset_today"] = sunsets[0]
+                if sunrises:
+                    signals["sunrise_today"] = sunrises[0]
+    except Exception as e:
+        print(f"[smart-advice] Sunset fetch failed: {e}")
+
+    # ─── UPCOMING APPOINTMENTS ──────────────────────
+    if user_id:
+        try:
+            from datetime import timedelta as _td
+            future_threshold = (datetime.now(timezone.utc) + _td(days=7)).isoformat()
+            appointments = (
+                supabase.table("appointments")
+                .select("id, appointment_date, status, service_type")
+                .eq("user_id", user_id)
+                .gte("appointment_date", datetime.now(timezone.utc).isoformat())
+                .lte("appointment_date", future_threshold)
+                .order("appointment_date", desc=False)
+                .limit(1)
+                .execute()
+            )
+            if appointments.data:
+                signals["next_appointment"] = appointments.data[0]
+        except Exception as e:
+            print(f"[smart-advice] Appointments fetch failed: {e}")
+
+    # ─── USER PENDING REPORTS ───────────────────────
+    if user_id:
+        try:
+            pending = (
+                supabase.table("reports")
+                .select("id", count="exact")
+                .eq("user_id", user_id)
+                .in_("status", ["submitted", "assigned", "in_progress"])
+                .execute()
+            )
+            signals["user_pending_reports"] = pending.count or 0
+        except Exception:
+            signals["user_pending_reports"] = 0
+
+    # ─── EVENT ANNOUNCEMENTS ────────────────────────
+    try:
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+        events = (
+            supabase.table("announcements")
+            .select("id, title, content, expires_at")
+            .or_("category.eq.event,category.eq.cultural,category.eq.sports")
+            .gte("expires_at", today_iso)
+            .order("created_at", desc=True)
+            .limit(2)
+            .execute()
+        )
+        if events.data:
+            signals["upcoming_events"] = events.data
+    except Exception as e:
+        print(f"[smart-advice] Events fetch failed: {e}")
 
     return signals
 
