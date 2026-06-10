@@ -80,6 +80,23 @@ def crew_reports(crew_id: str = Depends(get_current_crew)):
     return result.data or []
 
 
+@router.get("/reports/{report_id}")
+@router.get("/reports/{report_id}/")
+def get_crew_report(report_id: str, crew_id: str = Depends(get_current_crew)):
+    result = (
+        supabase.table("reports")
+        .select("*, departments(id, name, slug), crews(id, name, specialty, leader_name)")
+        .eq("id", report_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Αναφορά δεν βρέθηκε")
+    report = result.data[0]
+    if report.get("crew_id") != crew_id:
+        raise HTTPException(status_code=404, detail="Αναφορά δεν βρέθηκε")
+    return report
+
+
 @router.patch("/reports/{report_id}/status")
 def update_report_status(
     report_id: str,
