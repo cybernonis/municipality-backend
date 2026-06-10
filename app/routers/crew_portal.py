@@ -98,6 +98,7 @@ def get_crew_report(report_id: str, crew_id: str = Depends(get_current_crew)):
 
 
 @router.patch("/reports/{report_id}/status")
+@router.patch("/reports/{report_id}/status/")
 def update_report_status(
     report_id: str,
     payload: dict = Body(...),
@@ -133,39 +134,48 @@ def update_report_status(
 
 
 @router.post("/reports/{report_id}/note")
+@router.post("/reports/{report_id}/note/")
 async def add_crew_note(
     report_id: str,
     text: Optional[str] = Form(None),
     photo: Optional[UploadFile] = File(None),
     crew_id: str = Depends(get_current_crew),
 ):
-    report_res = supabase.table("reports").select("id, crew_id").eq("id", report_id).execute()
-    if not report_res.data:
-        raise HTTPException(status_code=404, detail="Αναφορά δεν βρέθηκε")
-    if report_res.data[0].get("crew_id") != crew_id:
-        raise HTTPException(status_code=403, detail="Η αναφορά δεν ανήκει στο συνεργείο σας")
+    try:
+        report_res = supabase.table("reports").select("id, crew_id").eq("id", report_id).execute()
+        if not report_res.data:
+            raise HTTPException(status_code=404, detail="Αναφορά δεν βρέθηκε")
+        if report_res.data[0].get("crew_id") != crew_id:
+            raise HTTPException(status_code=403, detail="Η αναφορά δεν ανήκει στο συνεργείο σας")
 
-    if not text and not photo:
-        raise HTTPException(status_code=400, detail="Απαιτείται κείμενο ή φωτογραφία")
+        if not text and not photo:
+            raise HTTPException(status_code=400, detail="Απαιτείται κείμενο ή φωτογραφία")
 
-    photo_url: Optional[str] = None
-    if photo:
-        photo_url = await upload_image(photo)
+        photo_url: Optional[str] = None
+        if photo:
+            photo_url = await upload_image(photo)
 
-    if photo_url:
-        comment = f"{text}\n[photo: {photo_url}]".strip() if text else f"[photo: {photo_url}]"
-    else:
-        comment = text or ""
+        if photo_url:
+            comment = f"{text}\n[photo: {photo_url}]".strip() if text else f"[photo: {photo_url}]"
+        else:
+            comment = text or ""
 
-    supabase.table("report_updates").insert({
-        "report_id": report_id,
-        "comment": comment,
-    }).execute()
+        supabase.table("report_updates").insert({
+            "report_id": report_id,
+            "status": "note",
+            "comment": comment,
+        }).execute()
 
-    return {"success": True, "photo_url": photo_url, "comment": comment}
+        return {"success": True, "photo_url": photo_url, "comment": comment}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("[CREW NOTE] report_id=%s error=%s", report_id, exc)
+        raise HTTPException(status_code=500, detail="Σφάλμα κατά την αποθήκευση της σημείωσης")
 
 
 @router.patch("/reports/{report_id}/blocker")
+@router.patch("/reports/{report_id}/blocker/")
 def set_blocker(
     report_id: str,
     payload: dict = Body(...),
@@ -183,6 +193,7 @@ def set_blocker(
 
     supabase.table("report_updates").insert({
         "report_id": report_id,
+        "status": "blocked",
         "comment": f"BLOCKER: {reason}",
     }).execute()
 
