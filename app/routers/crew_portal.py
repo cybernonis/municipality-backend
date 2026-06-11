@@ -68,11 +68,19 @@ def get_current_crew(
 
 # ── Reports ───────────────────────────────────────────────────────────────────
 
+_REPORT_SELECT = (
+    "id, description, address, latitude, longitude, category, severity, status,"
+    " crew_id, department_id, user_id, assigned_to, auto_assigned,"
+    " ai_confidence, image_url, created_at,"
+    " departments(id, name, slug), crews(id, name, specialty, leader_name)"
+)
+
+
 @router.get("/reports")
 def crew_reports(crew_id: str = Depends(get_current_crew)):
     result = (
         supabase.table("reports")
-        .select("*, departments(id, name, slug), crews(id, name, specialty, leader_name)")
+        .select(_REPORT_SELECT)
         .eq("crew_id", crew_id)
         .order("created_at", desc=True)
         .execute()
@@ -85,7 +93,7 @@ def crew_reports(crew_id: str = Depends(get_current_crew)):
 def get_crew_report(report_id: str, crew_id: str = Depends(get_current_crew)):
     result = (
         supabase.table("reports")
-        .select("*, departments(id, name, slug), crews(id, name, specialty, leader_name)")
+        .select(_REPORT_SELECT)
         .eq("id", report_id)
         .execute()
     )

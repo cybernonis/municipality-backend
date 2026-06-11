@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.database import supabase, get_supabase
@@ -282,11 +282,23 @@ async def create_sensor(payload: SensorCreate):
         raise HTTPException(status_code=400, detail=f"Σφάλμα: {str(e)}")
 
 
+# Aliases so callers using either name get the same rows
+_SENSOR_TYPE_ALIASES: dict[str, str] = {
+    "smart_waste_bin": "waste_bin",
+    "smart_parking":   "parking",
+    "smart_flood":     "flood",
+}
+
+
 @router.get("/sensors")
-async def list_sensors():
+async def list_sensors(type: Optional[str] = Query(None, description="Filter by sensor type")):
     try:
         client = get_supabase()
-        result = client.table("iot_sensors").select("*").execute()
+        query = client.table("iot_sensors").select("*")
+        if type:
+            canonical = _SENSOR_TYPE_ALIASES.get(type, type)
+            query = query.eq("type", canonical)
+        result = query.execute()
         return {"sensors": result.data or [], "total": len(result.data or [])}
     except Exception as e:
         print(f"[SENSORS LIST ERROR] {e}")
