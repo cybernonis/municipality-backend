@@ -68,24 +68,26 @@ def get_current_crew(
 
 # ── Reports ───────────────────────────────────────────────────────────────────
 
-_REPORT_SELECT = (
-    "id, description, address, latitude, longitude, category, severity, status,"
-    " crew_id, department_id, user_id, assigned_to, auto_assigned,"
-    " ai_confidence, image_url, created_at,"
-    " departments(id, name, slug), crews(id, name, specialty, leader_name)"
-)
+_EMBED = "departments(id, name, slug), crews(id, name, specialty, leader_name)"
+
+
+def _with_coords(report: dict) -> dict:
+    """Guarantee latitude and longitude keys are always present."""
+    report.setdefault("latitude", None)
+    report.setdefault("longitude", None)
+    return report
 
 
 @router.get("/reports")
 def crew_reports(crew_id: str = Depends(get_current_crew)):
     result = (
         supabase.table("reports")
-        .select(_REPORT_SELECT)
+        .select(f"*, {_EMBED}")
         .eq("crew_id", crew_id)
         .order("created_at", desc=True)
         .execute()
     )
-    return result.data or []
+    return [_with_coords(r) for r in (result.data or [])]
 
 
 @router.get("/reports/{report_id}")
@@ -93,7 +95,7 @@ def crew_reports(crew_id: str = Depends(get_current_crew)):
 def get_crew_report(report_id: str, crew_id: str = Depends(get_current_crew)):
     result = (
         supabase.table("reports")
-        .select(_REPORT_SELECT)
+        .select(f"*, {_EMBED}")
         .eq("id", report_id)
         .execute()
     )
@@ -102,7 +104,7 @@ def get_crew_report(report_id: str, crew_id: str = Depends(get_current_crew)):
     report = result.data[0]
     if report.get("crew_id") != crew_id:
         raise HTTPException(status_code=404, detail="Αναφορά δεν βρέθηκε")
-    return report
+    return _with_coords(report)
 
 
 @router.patch("/reports/{report_id}/status")
